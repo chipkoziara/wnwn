@@ -55,6 +55,14 @@ const (
 	stepComplete                         // Summary screen (inbox processed)
 )
 
+// detailFieldOrder defines the visual (and navigation) order of fields in the
+// task detail view. Navigation with j/k follows this slice, not the raw enum
+// int, so reordering fields here is the single source of truth.
+var detailFieldOrder = []detailField{
+	fieldText, fieldState, fieldTags, fieldScheduled,
+	fieldDeadline, fieldURL, fieldDelegatedTo, fieldNotes,
+}
+
 // processStats tracks counts per action type for the completion summary.
 type processStats struct {
 	trashed   int
@@ -1815,12 +1823,7 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 	b.WriteString(projectTitleStyle.Render("Task Detail"))
 	b.WriteString("\n\n")
 
-	editableFields := []detailField{
-		fieldText, fieldState, fieldTags, fieldScheduled,
-		fieldDeadline, fieldURL, fieldDelegatedTo, fieldNotes,
-	}
-
-	for _, f := range editableFields {
+	for _, f := range detailFieldOrder {
 		isSelected := f == m.detailField
 		isEditing := isSelected && m.mode == modeEditingField
 
@@ -1967,20 +1970,16 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "j", "down":
-		if int(m.detailField) < int(fieldCount)-1 {
-			m.detailField++
-		}
+		m.detailField = nextDetailField(m.detailField, 1)
 
 	case "k", "up":
-		if m.detailField > 0 {
-			m.detailField--
-		}
+		m.detailField = nextDetailField(m.detailField, -1)
 
 	case "g":
-		m.detailField = fieldText
+		m.detailField = detailFieldOrder[0]
 
 	case "G":
-		m.detailField = fieldNotes
+		m.detailField = detailFieldOrder[len(detailFieldOrder)-1]
 
 	case "e", "enter":
 		// Enter edit mode for the selected field.
@@ -2021,6 +2020,23 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// nextDetailField returns the field that is delta positions away from current
+// in detailFieldOrder, clamped to the ends.
+func nextDetailField(current detailField, delta int) detailField {
+	for i, f := range detailFieldOrder {
+		if f == current {
+			next := i + delta
+			if next < 0 {
+				next = 0
+			} else if next >= len(detailFieldOrder) {
+				next = len(detailFieldOrder) - 1
+			}
+			return detailFieldOrder[next]
+		}
+	}
+	return detailFieldOrder[0]
 }
 
 // cycleState advances through task states in order.
