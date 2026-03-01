@@ -8,14 +8,18 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/g-tuddy/g-tuddy/internal/service"
 	"github.com/g-tuddy/g-tuddy/internal/store"
+	"github.com/g-tuddy/g-tuddy/internal/tui"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(0)
+		// No subcommand — launch the TUI.
+		cmdTUI()
+		return
 	}
 
 	switch os.Args[1] {
@@ -30,16 +34,29 @@ func main() {
 	}
 }
 
+func cmdTUI() {
+	dataDir := getDataDir()
+	m := tui.New(dataDir)
+	p := tea.NewProgram(m)
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func printUsage() {
 	fmt.Println("g-tuddy: a GTD TUI app")
 	fmt.Println()
-	fmt.Println("usage: gtd <command> [options]")
+	fmt.Println("usage:")
+	fmt.Println("  gtd              Launch the TUI")
+	fmt.Println("  gtd <command>    Run a command")
 	fmt.Println()
 	fmt.Println("commands:")
 	fmt.Println("  add    Add a task to the inbox")
 	fmt.Println("  help   Show this help message")
 	fmt.Println()
 	fmt.Println("examples:")
+	fmt.Println("  gtd")
 	fmt.Println("  gtd add \"Buy milk\"")
 	fmt.Println("  gtd add \"Book flights\" --deadline 2026-03-15 --tag travel --tag @computer")
 }
