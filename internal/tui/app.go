@@ -110,8 +110,9 @@ type taskRefiledMsg struct{ text string }
 type clearStatusMsg struct{}
 type projectsLoadedMsg struct{ projects []service.ProjectSummary }
 type projectDetailMsg struct {
-	project  *model.Project
-	filename string
+	project     *model.Project
+	filename    string
+	resetCursor bool // true when entering detail view for the first time
 }
 type projectCreatedMsg struct{ title string }
 type errMsg struct{ err error }
@@ -143,7 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.view == viewProjects {
 			reload = m.loadProjects
 		} else if m.view == viewProjectDetail && m.activeFilename != "" {
-			reload = m.loadProjectDetail(m.activeFilename)
+			reload = m.reloadProjectDetail()
 		}
 		return m, tea.Batch(reload, m.clearStatusAfter())
 
@@ -156,7 +157,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeProject = msg.project
 		m.activeFilename = msg.filename
 		m.view = viewProjectDetail
-		m.projCursor = 0
+		if msg.resetCursor {
+			m.projCursor = 0
+		}
 		return m, nil
 
 	case projectCreatedMsg:
@@ -222,14 +225,28 @@ func (m Model) loadProjects() tea.Msg {
 	return projectsLoadedMsg{projects}
 }
 
-// loadProjectDetail loads a full project by filename.
+// loadProjectDetail loads a full project by filename, resetting the cursor.
+// Used when entering the detail view for the first time.
 func (m Model) loadProjectDetail(filename string) tea.Cmd {
 	return func() tea.Msg {
 		proj, err := m.svc.GetProject(filename)
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectDetailMsg{proj, filename}
+		return projectDetailMsg{proj, filename, true}
+	}
+}
+
+// reloadProjectDetail reloads the project without resetting the cursor.
+// Used after mutations (reorder, add task, mark done, etc.).
+func (m Model) reloadProjectDetail() tea.Cmd {
+	filename := m.activeFilename
+	return func() tea.Msg {
+		proj, err := m.svc.GetProject(filename)
+		if err != nil {
+			return errMsg{err}
+		}
+		return projectDetailMsg{proj, filename, false}
 	}
 }
 
@@ -536,7 +553,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			item := flatItems[m.projCursor]
 			if item.isTask {
 				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone)
-				return m, m.loadProjectDetail(m.activeFilename)
+				return m, m.reloadProjectDetail()
 			}
 		}
 
@@ -552,7 +569,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						m.projCursor = 0
 					}
 				}
-				return m, m.loadProjectDetail(m.activeFilename)
+				return m, m.reloadProjectDetail()
 			}
 		}
 
@@ -568,7 +585,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						m.projCursor = len(flatItems) - 1
 					}
 				}
-				return m, m.loadProjectDetail(m.activeFilename)
+				return m, m.reloadProjectDetail()
 			}
 		}
 
