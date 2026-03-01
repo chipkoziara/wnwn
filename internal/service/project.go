@@ -213,3 +213,64 @@ func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, tas
 
 	return svc.Store.WriteProject(proj)
 }
+
+// ReorderTaskInSubGroup moves a task up or down within its sub-group.
+// delta is -1 for up, +1 for down.
+func (svc *Service) ReorderTaskInSubGroup(filename string, subGroupIdx int, taskID string, delta int) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+
+	sg := &proj.SubGroups[subGroupIdx]
+	idx := findTaskIndex(sg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	newIdx := idx + delta
+	if newIdx < 0 || newIdx >= len(sg.Tasks) {
+		return nil // at boundary, nothing to do
+	}
+
+	// Swap.
+	sg.Tasks[idx], sg.Tasks[newIdx] = sg.Tasks[newIdx], sg.Tasks[idx]
+
+	return svc.Store.WriteProject(proj)
+}
+
+// MoveTaskBetweenSubGroups moves a task from one sub-group to another within the same project.
+func (svc *Service) MoveTaskBetweenSubGroups(filename string, fromSgIdx int, taskID string, toSgIdx int) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	if fromSgIdx < 0 || fromSgIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("source sub-group index %d out of range", fromSgIdx)
+	}
+	if toSgIdx < 0 || toSgIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("destination sub-group index %d out of range", toSgIdx)
+	}
+	if fromSgIdx == toSgIdx {
+		return nil // same sub-group, nothing to do
+	}
+
+	fromSg := &proj.SubGroups[fromSgIdx]
+	idx := findTaskIndex(fromSg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, fromSg.Title)
+	}
+
+	task := fromSg.Tasks[idx]
+	fromSg.Tasks = append(fromSg.Tasks[:idx], fromSg.Tasks[idx+1:]...)
+
+	toSg := &proj.SubGroups[toSgIdx]
+	toSg.Tasks = append(toSg.Tasks, task)
+
+	return svc.Store.WriteProject(proj)
+}

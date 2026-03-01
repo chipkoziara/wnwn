@@ -24,6 +24,7 @@ const (
 	modeAddingSubGroup   // adding a sub-group to current project
 	modeAddingProjectTask // adding a task to current project sub-group
 	modePickingProject   // picking a project for refile
+	modePickingSubGroup  // picking a sub-group to move a task into
 )
 
 // viewState tracks what the user is currently looking at.
@@ -59,6 +60,12 @@ type Model struct {
 	// Refile state: task being refiled to a project.
 	refileTaskID   string
 	refileTaskText string
+	refileFromList model.ListType
+
+	// Sub-group picker state: task being moved between sub-groups.
+	moveTaskID   string
+	moveTaskText string
+	moveFromSgIdx int
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -179,6 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddingProjectTask(msg)
 		case modePickingProject:
 			return m.updatePickingProject(msg)
+		case modePickingSubGroup:
+			return m.updatePickingSubGroup(msg)
 		default:
 			switch m.view {
 			case viewProjects:
@@ -318,14 +327,15 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		task := m.list.Tasks[m.cursor]
 		return m, m.setStateSomeday(task.ID, task.Text)
 
-	// Refile to a project (inbox only).
+	// Refile to a project (from inbox or single-actions).
 	case "p":
-		if m.currentList != model.ListIn || m.list == nil || len(m.list.Tasks) == 0 {
+		if m.list == nil || len(m.list.Tasks) == 0 {
 			return m, nil
 		}
 		task := m.list.Tasks[m.cursor]
 		m.refileTaskID = task.ID
 		m.refileTaskText = task.Text
+		m.refileFromList = m.currentList
 		m.mode = modePickingProject
 		m.cursor = 0
 		return m, m.loadProjects
@@ -530,6 +540,56 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "ctrl+k":
+		// Move task up within its sub-group.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				err := m.svc.ReorderTaskInSubGroup(m.activeFilename, item.sgIdx, item.task.ID, -1)
+				if err == nil {
+					m.projCursor--
+					if m.projCursor < 0 {
+						m.projCursor = 0
+					}
+				}
+				return m, m.loadProjectDetail(m.activeFilename)
+			}
+		}
+
+	case "ctrl+j":
+		// Move task down within its sub-group.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				err := m.svc.ReorderTaskInSubGroup(m.activeFilename, item.sgIdx, item.task.ID, 1)
+				if err == nil {
+					m.projCursor++
+					if m.projCursor >= len(flatItems) {
+						m.projCursor = len(flatItems) - 1
+					}
+				}
+				return m, m.loadProjectDetail(m.activeFilename)
+			}
+		}
+
+	case "m":
+		// Move task to a different sub-group.
+		if m.activeProject == nil || len(m.activeProject.SubGroups) < 2 {
+			m.statusMsg = "Need at least 2 sub-groups to move between"
+			return m, m.clearStatusAfter()
+		}
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				m.moveTaskID = item.task.ID
+				m.moveTaskText = item.task.Text
+				m.moveFromSgIdx = item.sgIdx
+				m.mode = modePickingSubGroup
+				m.cursor = 0
+				return m, nil
+			}
+		}
+
 	case "1":
 		m.view = viewList
 		m.currentList = model.ListIn
@@ -588,6 +648,46 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updatePickingSubGroup handles keys when picking a destination sub-group.
+func (m Model) updatePickingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modeNormal
+		m.moveTaskID = ""
+		m.moveTaskText = ""
+		return m, nil
+
+	case "j", "down":
+		if m.cursor < len(m.activeProject.SubGroups)-1 {
+			m.cursor++
+		}
+
+	case "k", "up":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+
+	case "enter":
+		if m.activeProject != nil && m.cursor < len(m.activeProject.SubGroups) {
+			toSgIdx := m.cursor
+			m.mode = modeNormal
+			taskID := m.moveTaskID
+			taskText := m.moveTaskText
+			fromSgIdx := m.moveFromSgIdx
+			filename := m.activeFilename
+			return m, func() tea.Msg {
+				err := m.svc.MoveTaskBetweenSubGroups(filename, fromSgIdx, taskID, toSgIdx)
+				if err != nil {
+					return errMsg{err}
+				}
+				return taskRefiledMsg{fmt.Sprintf("Moved \"%s\" to %s", taskText, m.activeProject.SubGroups[toSgIdx].Title)}
+			}
+		}
+	}
+
+	return m, nil
+}
+
 // moveToProject moves the refile task to the first sub-group of a project.
 func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
 	taskID := m.refileTaskID
@@ -606,7 +706,7 @@ func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
 				return errMsg{err}
 			}
 		}
-		err = m.svc.MoveToProject(model.ListIn, taskID, filename, sgIdx, model.StateNextAction)
+		err = m.svc.MoveToProject(m.refileFromList, taskID, filename, sgIdx, model.StateNextAction)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -789,6 +889,8 @@ func (m Model) View() tea.View {
 	switch {
 	case m.mode == modePickingProject:
 		m.renderProjectPicker(&b)
+	case m.mode == modePickingSubGroup:
+		m.renderSubGroupPicker(&b)
 	case m.view == viewProjects:
 		m.renderProjectListView(&b)
 	case m.view == viewProjectDetail:
@@ -994,6 +1096,36 @@ func (m Model) renderProjectPicker(b *strings.Builder) {
 	}
 }
 
+// renderSubGroupPicker renders the sub-group selection list for moving a task.
+func (m Model) renderSubGroupPicker(b *strings.Builder) {
+	b.WriteString(inputPromptStyle.Render(fmt.Sprintf("  Move \"%s\" to sub-group:", m.moveTaskText)))
+	b.WriteString("\n\n")
+
+	if m.activeProject == nil {
+		return
+	}
+
+	for i, sg := range m.activeProject.SubGroups {
+		isSelected := i == m.cursor
+		isCurrent := i == m.moveFromSgIdx
+
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+			b.WriteString(selectedTaskStyle.Render(sg.Title))
+		} else {
+			b.WriteString("   ")
+			b.WriteString(sg.Title)
+		}
+
+		if isCurrent {
+			b.WriteString(stateStyle.Render("  (current)"))
+		} else {
+			b.WriteString(stateStyle.Render(fmt.Sprintf("  (%d tasks)", len(sg.Tasks))))
+		}
+		b.WriteString("\n")
+	}
+}
+
 // renderTask renders a single task line.
 func (m Model) renderTask(idx int, task model.Task) string {
 	var b strings.Builder
@@ -1088,7 +1220,7 @@ func (m Model) helpText() string {
 	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask {
 		return "enter: save  esc: cancel"
 	}
-	if m.mode == modePickingProject {
+	if m.mode == modePickingProject || m.mode == modePickingSubGroup {
 		return "enter: select  esc: cancel  j/k: navigate"
 	}
 
@@ -1098,12 +1230,12 @@ func (m Model) helpText() string {
 	case viewProjects:
 		return "enter: open  a: new project  " + nav
 	case viewProjectDetail:
-		return "a: add task  n: new sub-group  d: done  esc: back  " + nav
+		return "a: add task  n: new sub-group  d: done  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
 			return "a: add  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 		}
-		return "s: someday  w: waiting  d: done  x: trash  " + nav
+		return "p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 	}
 }
 

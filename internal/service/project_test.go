@@ -250,3 +250,161 @@ func TestListProjectsSummaryWithNextAction(t *testing.T) {
 		t.Errorf("NextAction = %q", summaries[0].NextAction)
 	}
 }
+
+func TestReorderTaskInSubGroup(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t1, _ := svc.AddTaskToProject("my-project.md", 0, "First", model.StateNextAction)
+	t2, _ := svc.AddTaskToProject("my-project.md", 0, "Second", model.StateNextAction)
+	t3, _ := svc.AddTaskToProject("my-project.md", 0, "Third", model.StateNextAction)
+
+	// Move "Third" up one position.
+	err = svc.ReorderTaskInSubGroup("my-project.md", 0, t3.ID, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _ := s.ReadProject("my-project.md")
+	tasks := proj.SubGroups[0].Tasks
+	if len(tasks) != 3 {
+		t.Fatalf("got %d tasks", len(tasks))
+	}
+	if tasks[0].ID != t1.ID || tasks[1].ID != t3.ID || tasks[2].ID != t2.ID {
+		t.Errorf("order: %s, %s, %s — want %s, %s, %s",
+			tasks[0].Text, tasks[1].Text, tasks[2].Text,
+			"First", "Third", "Second")
+	}
+
+	// Move "First" down one position.
+	err = svc.ReorderTaskInSubGroup("my-project.md", 0, t1.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _ = s.ReadProject("my-project.md")
+	tasks = proj.SubGroups[0].Tasks
+	if tasks[0].ID != t3.ID || tasks[1].ID != t1.ID || tasks[2].ID != t2.ID {
+		t.Errorf("order: %s, %s, %s — want Third, First, Second",
+			tasks[0].Text, tasks[1].Text, tasks[2].Text)
+	}
+
+	// Move at boundary (top) — should be a no-op.
+	err = svc.ReorderTaskInSubGroup("my-project.md", 0, t3.ID, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj, _ = s.ReadProject("my-project.md")
+	if proj.SubGroups[0].Tasks[0].ID != t3.ID {
+		t.Error("boundary move should be no-op")
+	}
+}
+
+func TestMoveTaskBetweenSubGroups(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.AddSubGroup("my-project.md", "Phase 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, _ := svc.AddTaskToProject("my-project.md", 0, "Moveable task", model.StateNextAction)
+
+	// Move from Phase 1 (idx 0) to Phase 2 (idx 1).
+	err = svc.MoveTaskBetweenSubGroups("my-project.md", 0, task.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _ := s.ReadProject("my-project.md")
+	if len(proj.SubGroups[0].Tasks) != 0 {
+		t.Errorf("Phase 1 has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
+	}
+	if len(proj.SubGroups[1].Tasks) != 1 {
+		t.Fatalf("Phase 2 has %d tasks, want 1", len(proj.SubGroups[1].Tasks))
+	}
+	if proj.SubGroups[1].Tasks[0].Text != "Moveable task" {
+		t.Errorf("Text = %q", proj.SubGroups[1].Tasks[0].Text)
+	}
+}
+
+func TestMoveTaskBetweenSubGroupsSameGroup(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, _ := svc.AddTaskToProject("my-project.md", 0, "Stay put", model.StateNextAction)
+
+	// Move to same sub-group — should be a no-op.
+	err = svc.MoveTaskBetweenSubGroups("my-project.md", 0, task.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proj, _ := s.ReadProject("my-project.md")
+	if len(proj.SubGroups[0].Tasks) != 1 {
+		t.Errorf("Phase 1 has %d tasks, want 1", len(proj.SubGroups[0].Tasks))
+	}
+}
+
+func TestMoveToProjectFromSingleActions(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	// Add task to inbox, refile to single-actions first.
+	task, err := svc.AddToInbox("Refiled task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateNextAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a project.
+	_, err = svc.CreateProject("Target Project", "Tasks")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Move from single-actions to project.
+	err = svc.MoveToProject(model.ListSingleActions, task.ID, "target-project.md", 0, model.StateNextAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Single-actions should be empty.
+	sa, err := s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sa.Tasks) != 0 {
+		t.Errorf("single-actions has %d tasks, want 0", len(sa.Tasks))
+	}
+
+	// Project should have the task.
+	proj, err := s.ReadProject("target-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proj.SubGroups[0].Tasks) != 1 {
+		t.Fatalf("project has %d tasks, want 1", len(proj.SubGroups[0].Tasks))
+	}
+	if proj.SubGroups[0].Tasks[0].Text != "Refiled task" {
+		t.Errorf("Text = %q", proj.SubGroups[0].Tasks[0].Text)
+	}
+}
