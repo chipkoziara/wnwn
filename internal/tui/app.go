@@ -12,6 +12,7 @@ import (
 	"github.com/g-tuddy/g-tuddy/internal/model"
 	"github.com/g-tuddy/g-tuddy/internal/service"
 	"github.com/g-tuddy/g-tuddy/internal/store"
+	"github.com/g-tuddy/g-tuddy/internal/tui/datepicker"
 )
 
 // mode represents the current UI mode.
@@ -26,6 +27,7 @@ const (
 	modePickingProject    // picking a project for refile
 	modePickingSubGroup   // picking a sub-group to move a task into
 	modeEditingField      // editing a field in the task detail view
+	modePickingDate       // date picker overlay for deadline/scheduled fields
 )
 
 // viewState tracks what the user is currently looking at.
@@ -91,6 +93,10 @@ type Model struct {
 	detailFromList  model.ListType // set when returning to a list view
 	detailFromSgIdx int            // set when returning to a project detail view
 	detailIsProject bool           // true if task lives in a project (not a flat list)
+
+	// Date picker state.
+	datePicker      datepicker.Model // calendar date picker component
+	datePickerField detailField      // which detail field the picker is editing
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -108,6 +114,7 @@ func New(dataDir string) Model {
 		store:       s,
 		currentList: model.ListIn,
 		input:       ti,
+		datePicker:  datepicker.New(),
 	}
 }
 
@@ -232,6 +239,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePickingSubGroup(msg)
 		case modeEditingField:
 			return m.updateEditingField(msg)
+		case modePickingDate:
+			return m.updatePickingDate(msg)
 		default:
 			switch m.view {
 			case viewProjects:
@@ -250,6 +259,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask || m.mode == modeEditingField {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		return m, cmd
+	}
+
+	// Pass through to date picker.
+	if m.mode == modePickingDate {
+		var cmd tea.Cmd
+		m.datePicker, cmd = m.datePicker.Update(msg)
 		return m, cmd
 	}
 
@@ -979,6 +995,8 @@ func (m Model) View() tea.View {
 		m.renderProjectPicker(&b)
 	case m.mode == modePickingSubGroup:
 		m.renderSubGroupPicker(&b)
+	case m.mode == modePickingDate:
+		m.renderDatePicker(&b)
 	case m.view == viewTaskDetail:
 		m.renderTaskDetailView(&b)
 	case m.view == viewProjects:
@@ -1360,14 +1378,21 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		b.WriteString(" ")
 
 		// Value or input.
+		isDateField := f == fieldDeadline || f == fieldScheduled
 		if isEditing {
 			b.WriteString(m.input.View())
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
+			if isSelected && isDateField {
+				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+			}
 		} else if f == fieldState {
 			b.WriteString(stateStyle.Render(value))
-		} else if f == fieldDeadline || f == fieldScheduled {
+		} else if isDateField {
 			b.WriteString(deadlineStyle.Render(value))
+			if isSelected {
+				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+			}
 		} else if f == fieldTags {
 			b.WriteString(tagStyle.Render(value))
 		} else {
@@ -1414,6 +1439,38 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 	}
 }
 
+// renderDatePicker renders the date picker overlay.
+func (m Model) renderDatePicker(b *strings.Builder) {
+	fieldName := fieldLabel(m.datePickerField)
+	b.WriteString(projectTitleStyle.Render(fmt.Sprintf("Pick date: %s", fieldName)))
+	b.WriteString("\n\n")
+	b.WriteString(m.datePicker.View())
+}
+
+// updatePickingDate handles messages while the date picker is open.
+func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.datePicker, cmd = m.datePicker.Update(msg)
+
+	// Check for a result.
+	if t, confirmed, cancelled := m.datePicker.Result(); confirmed {
+		// Write the picked time back into the working copy.
+		switch m.datePickerField {
+		case fieldDeadline:
+			m.detailTask.Deadline = &t
+		case fieldScheduled:
+			m.detailTask.Scheduled = &t
+		}
+		m.mode = modeNormal
+		return m, nil
+	} else if cancelled {
+		m.mode = modeNormal
+		return m, nil
+	}
+
+	return m, cmd
+}
+
 // updateTaskDetail handles keys in the task detail view (normal mode within the view).
 func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -1448,9 +1505,21 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		// Enter edit mode for the selected field.
 		// State uses space/enter to cycle instead of text input.
 		if m.detailField == fieldState {
-			// Cycle state on enter.
 			m.detailTask.State = cycleState(m.detailTask.State)
 			return m, nil
+		}
+		// Deadline and scheduled use the calendar date picker.
+		if m.detailField == fieldDeadline || m.detailField == fieldScheduled {
+			m.mode = modePickingDate
+			m.datePickerField = m.detailField
+			var initial time.Time
+			if m.detailField == fieldDeadline && m.detailTask.Deadline != nil {
+				initial = *m.detailTask.Deadline
+			} else if m.detailField == fieldScheduled && m.detailTask.Scheduled != nil {
+				initial = *m.detailTask.Scheduled
+			}
+			cmd := m.datePicker.Open(initial)
+			return m, cmd
 		}
 		m.mode = modeEditingField
 		m.input.Reset()
@@ -1644,6 +1713,9 @@ func (m Model) helpText() string {
 	}
 	if m.mode == modePickingProject || m.mode == modePickingSubGroup {
 		return "enter: select  esc: cancel  j/k: navigate"
+	}
+	if m.mode == modePickingDate {
+		return "arrows/hjkl: move day  </> or [/]: month  t: toggle time  enter: confirm  esc: cancel"
 	}
 	if m.view == viewTaskDetail {
 		if m.mode == modeEditingField {
