@@ -51,12 +51,13 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Guided GTD decision tree, walks through inbox items FIFO one at a time
 - Tab bar shows "Processing Inbox (N of M)" progress
 - Step 1 — Actionable?: `y` yes, `n` no, `s` skip, `q`/`esc` quit
-- Step 2a — Not Actionable: `t` trash, `m` someday/maybe (with optional enrichment)
-- Step 2b/3 — Enrich (hub): `t` edit text, `g` add tags (tab to confirm each), `d` deadline (calendar), `c` schedule (calendar), `n` notes; `enter` continue, `esc` back
+- Step 2a — Not Actionable: `t` trash only (no someday here — someday/maybe is for deferred actionable tasks, not true non-actionables)
+- Step 2b/3 — Enrich (hub): `t` edit text, `g` add tags (tab to confirm each), `d` deadline (calendar), `c` schedule (calendar), `n` notes; `enter` continue to route, `esc` back
+  - Renders a field list with inline input when editing — same UX pattern as task detail view
   - Tags entered one-at-a-time via text input + `tab` to confirm; `enter` finishes; designed for future autocomplete
-  - Deadline/schedule reuse the full calendar date picker
+  - Deadline/schedule reuse the full calendar date picker; date-only selection (no time toggled) stores without time component
   - All edits mutate a working copy (`processTask`); only persisted when the final action fires
-- Step 4 — Route: `d` done (<2 min), `w` waiting-for (→ delegated_to input), `r` single actions, `p` pick project, `n` new project (→ title input)
+- Step 4 — Route: `d` done (<2 min), `w` waiting-for (→ delegated_to input), `s` someday/maybe, `r` single actions, `p` pick project, `n` new project (→ title input)
 - Step 5 — Complete: summary stats (trashed/someday/done/waiting/single-actions/to-projects/skipped); any key returns to inbox
 
 **Single Actions view:**
@@ -122,15 +123,35 @@ Tasks use Markdown checkboxes with indented fenced YAML metadata blocks. See `BR
 
 Prioritized by impact:
 
-### High Value (daily usability)
-1. **Task editing UX enhancements** — Several small improvements to the task detail editing experience. To be scoped next.
+### Bugs (fix now)
+
+- None currently open.
+
+### Deferred (future sessions)
+
+5. **Undo / error correction in process inbox** — If you mistakenly mark something done or refile to the wrong location during processing, there's no way to fix it without quitting and manually finding the task. Three approaches were considered:
+   - *Undo stack:* Most intuitive but complex; breaks the stateless service pattern, needs inverse operations.
+   - *Staged changes with delay:* Adds confusion about when things are "really" committed.
+   - *"Recently moved" view:* Pragmatic; a query against recently-modified tasks. Natural fit once Views/Query DSL is built.
+   - **Recommendation:** Defer until Views/Query DSL exists, then add a "Recently Modified" saved view. In the meantime, users can quit processing, navigate to the task's new location, and edit via task detail view.
+
+6. **Timezone handling** — Don't append timezones. The current naive-local-time approach is correct for a personal GTD app where you're always viewing your own tasks on your own machine. Adding timezone awareness (parsing, display, DST) adds significant complexity with minimal benefit. If syncing across timezones is ever needed, it should be a dedicated feature.
+
+7. **Invalid datetime validation** — The date picker prevents most invalid dates. Text input for dates (in task detail view) could get validation, but it's low priority. The date picker is the primary input mechanism.
+
+8. **Project creation and editing workflow** — Several improvements identified:
+   - *Rename projects:* Currently the filename is derived from the title at creation and never updated. Renaming needs to update the file on disk (or add an indirection layer). Non-trivial.
+   - *Definition of Done field:* A text field on `model.Project` describing what "done" means for the project. Requires parser/writer/model changes.
+   - *URL field on projects:* A link to external documentation (Google Drive, wiki, etc.). Same scope as Definition of Done.
+   - **Recommendation:** Bundle these into a dedicated "Project Editing" enhancement pass. The model needs new fields, the parser/writer need updates, and the TUI needs a project detail editing mode.
 
 ### Power Features
-3. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
-4. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
-5. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
-6. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
-7. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+
+9. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
+10. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
+11. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
+12. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
+13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
 - None currently open. All tests pass (31 total: 8 parser + 23 service).
@@ -153,7 +174,8 @@ Built and shipped in session 2. Full design notes in the commit message and Arch
 - **Process inbox working copy**: same pattern. `processTask` is a copy of the current inbox item, mutated during enrichment. The final action (trash/refile/done/someday) calls `svc.UpdateTask` to flush enrichment to disk first, then the refile/state-change. This two-step approach ensures enrichment survives the move.
 - **Process inbox shared mode reuse**: `modeEditingField`, `modePickingDate`, and `modePickingProject` are shared with the normal/task-detail flows. Each handler checks `m.view == viewProcessInbox` and routes results back to the process inbox working copy (`processTask`) instead of `detailTask`. The project picker on `enter` calls `processMoveToProject` instead of `moveToProject`; on `esc` it returns to `stepRoute` instead of reloading the list.
 - **`projectCreatedMsg` carries filename**: `projectCreatedMsg` was extended with a `filename string` field (derived from `store.Slugify(title) + ".md"`). The `projectCreatedMsg` handler checks `m.view == viewProcessInbox` and calls `processRefileToNewProject(filename)` instead of showing a status message and reloading the project list.
-- **Date picker composition**: `internal/tui/datepicker` is a standalone sub-model following the Bubbletea component pattern. Parent forwards all `tea.Msg` to it while `modePickingDate` is active; result is read back via `Result()` after each `Update` cycle.
+- **Date picker composition**: `internal/tui/datepicker` is a standalone sub-model following the Bubbletea component pattern. Parent forwards all `tea.Msg` to it while `modePickingDate` is active; result is read back via `Result()` after each `Update` cycle. `Result()` returns `(time.Time, hasTime bool, confirmed bool, cancelled bool)` — `hasTime` is true only when the user explicitly toggled the time input. When false, the stored value is date-only (midnight), and `formatOptionalTime()` omits the time component in display.
+- **`formatOptionalTime()`**: helper in `app.go` that formats a `*time.Time` as `"2006-01-02"` when hour/minute are both 0, and `"2006-01-02 15:04"` otherwise. Used consistently across all date display sites.
 - **No third-party date picker**: `bubble-datepicker` and similar libraries use the old `github.com/charmbracelet/bubbletea` v1 import path and are incompatible with this project's v2 dependency. The date picker is custom-built.
 
 ## How to Run

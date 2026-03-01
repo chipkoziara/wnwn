@@ -103,6 +103,7 @@ type Model struct {
 	confirmed bool
 	cancelled bool
 	result    time.Time
+	hasTime   bool // true when the user explicitly enabled the time input
 }
 
 // New returns a new Model, initially closed.
@@ -167,7 +168,9 @@ func (m *Model) Open(initial time.Time) tea.Cmd {
 	m.month = base.Month()
 	m.selectedDay = base.Day()
 
-	m.showTime = !initial.IsZero() && (initial.Hour() != 0 || initial.Minute() != 0)
+	hasExistingTime := !initial.IsZero() && (initial.Hour() != 0 || initial.Minute() != 0)
+	m.showTime = hasExistingTime
+	m.hasTime = false // reset; will be set true only if user explicitly toggles or confirms with time
 	m.confirmed = false
 	m.cancelled = false
 	m.open = true
@@ -188,17 +191,20 @@ func (m *Model) Open(initial time.Time) tea.Cmd {
 func (m Model) IsOpen() bool { return m.open }
 
 // Result returns the picker outcome after an Update cycle:
-//   - (t, true,  false) — user confirmed; t is the selected date/time
-//   - (_, false, true)  — user cancelled
-//   - (_, false, false) — still open, no decision yet
-func (m Model) Result() (time.Time, bool, bool) {
+//   - (t, hasTime, true,  false) — confirmed; hasTime is true if the user explicitly set a time
+//   - (_, false,   false, true)  — cancelled
+//   - (_, false,   false, false) — still open, no decision yet
+//
+// When hasTime is false the returned time has hour=0, minute=0. Callers should
+// use hasTime to decide whether to display/store a date-only value or a full datetime.
+func (m Model) Result() (time.Time, bool, bool, bool) {
 	if m.confirmed {
-		return m.result, true, false
+		return m.result, m.hasTime, true, false
 	}
 	if m.cancelled {
-		return time.Time{}, false, true
+		return time.Time{}, false, false, true
 	}
-	return time.Time{}, false, false
+	return time.Time{}, false, false, false
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -384,6 +390,7 @@ func (m Model) confirm() (Model, tea.Cmd) {
 		}
 	}
 	m.result = time.Date(m.year, m.month, m.selectedDay, hour, minute, 0, 0, time.Local)
+	m.hasTime = m.showTime
 	m.confirmed = true
 	m.open = false
 	return m, nil

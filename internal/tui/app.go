@@ -55,14 +55,6 @@ const (
 	stepComplete                         // Summary screen (inbox processed)
 )
 
-// processRoute determines what happens when the user confirms the enrich step.
-type processRoute int
-
-const (
-	routeActionable processRoute = iota // enrich -> route step
-	routeSomeday                        // enrich -> refile as someday/maybe
-)
-
 // processStats tracks counts per action type for the completion summary.
 type processStats struct {
 	trashed   int
@@ -137,7 +129,6 @@ type Model struct {
 	processIdx   int          // index of the current item being processed (0-based)
 	processStep  processStep  // current step in the decision tree
 	processTask  model.Task   // working copy of the current item (mutated during enrichment)
-	processRoute processRoute // determines behaviour on enrich confirm: route or someday
 	processTags  []string     // tag accumulator for stepEnrichTags (tab-separated entry)
 	processStats processStats // running totals for the completion summary
 }
@@ -686,7 +677,6 @@ func (m Model) updateProcessInbox(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) updateProcessStepActionable(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y":
-		m.processRoute = routeActionable
 		m.processStep = stepEnrich
 	case "n":
 		m.processStep = stepNotActionable
@@ -706,7 +696,7 @@ func (m Model) updateProcessStepActionable(msg tea.KeyPressMsg) (tea.Model, tea.
 func (m Model) updateProcessStepNotActionable(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "t":
-		// Trash immediately.
+		// Trash immediately — no enrichment needed for non-actionable items.
 		task := m.processTask
 		return m, func() tea.Msg {
 			if err := m.svc.TrashTask(model.ListIn, task.ID); err != nil {
@@ -714,10 +704,6 @@ func (m Model) updateProcessStepNotActionable(msg tea.KeyPressMsg) (tea.Model, t
 			}
 			return processAdvancedMsg{action: "trashed"}
 		}
-	case "m":
-		// Someday/maybe: go to enrich first with someday route.
-		m.processRoute = routeSomeday
-		m.processStep = stepEnrich
 	case "esc":
 		m.processStep = stepActionable
 	}
@@ -779,29 +765,12 @@ func (m Model) updateProcessStepEnrich(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		return m, cmd
 
 	case "enter":
-		if m.processRoute == routeSomeday {
-			// Persist enrichment + refile as someday/maybe.
-			task := m.processTask
-			return m, func() tea.Msg {
-				if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-					return errMsg{err}
-				}
-				if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
-					return errMsg{err}
-				}
-				return processAdvancedMsg{action: "someday"}
-			}
-		}
-		// Actionable route: proceed to routing step.
+		// Always proceed to the route step after enrichment.
 		m.processStep = stepRoute
 
 	case "esc":
-		if m.processRoute == routeSomeday {
-			m.processStep = stepNotActionable
-		} else {
-			m.processStep = stepActionable
-		}
-		// Revert working copy to original.
+		// Back to actionable step; revert working copy.
+		m.processStep = stepActionable
 		m.processTask = m.processItems[m.processIdx]
 	}
 	return m, nil
@@ -863,8 +832,21 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		cmd := m.input.Focus()
 		return m, cmd
 
+	case "s":
+		// Someday/maybe: actionable but deferred indefinitely.
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+				return errMsg{err}
+			}
+			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
+				return errMsg{err}
+			}
+			return processAdvancedMsg{action: "someday"}
+		}
+
 	case "r":
-		// Refile to single actions.
+		// Refile to single actions as next-action.
 		task := m.processTask
 		return m, func() tea.Msg {
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
@@ -1815,15 +1797,9 @@ func (m Model) fieldValue(f detailField) string {
 		}
 		return strings.Join(m.detailTask.Tags, ", ")
 	case fieldDeadline:
-		if m.detailTask.Deadline == nil {
-			return ""
-		}
-		return m.detailTask.Deadline.Format("2006-01-02 15:04")
+		return formatOptionalTime(m.detailTask.Deadline)
 	case fieldScheduled:
-		if m.detailTask.Scheduled == nil {
-			return ""
-		}
-		return m.detailTask.Scheduled.Format("2006-01-02 15:04")
+		return formatOptionalTime(m.detailTask.Scheduled)
 	case fieldURL:
 		return m.detailTask.URL
 	case fieldDelegatedTo:
@@ -1840,8 +1816,8 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 	b.WriteString("\n\n")
 
 	editableFields := []detailField{
-		fieldText, fieldState, fieldTags, fieldDeadline,
-		fieldScheduled, fieldURL, fieldDelegatedTo, fieldNotes,
+		fieldText, fieldState, fieldTags, fieldScheduled,
+		fieldDeadline, fieldURL, fieldDelegatedTo, fieldNotes,
 	}
 
 	for _, f := range editableFields {
@@ -1942,22 +1918,28 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.datePicker, cmd = m.datePicker.Update(msg)
 
 	// Check for a result.
-	if t, confirmed, cancelled := m.datePicker.Result(); confirmed {
+	if t, hasTime, confirmed, cancelled := m.datePicker.Result(); confirmed {
+		// When hasTime is false, strip the time component so it stores as date-only (midnight).
+		// This lets callers distinguish "user picked a date" from "user picked a datetime".
+		picked := t
+		if !hasTime {
+			picked = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+		}
 		if m.view == viewProcessInbox {
 			// Write back into the process inbox working copy.
 			switch m.datePickerField {
 			case fieldDeadline:
-				m.processTask.Deadline = &t
+				m.processTask.Deadline = &picked
 			case fieldScheduled:
-				m.processTask.Scheduled = &t
+				m.processTask.Scheduled = &picked
 			}
 		} else {
 			// Write the picked time back into the task detail working copy.
 			switch m.datePickerField {
 			case fieldDeadline:
-				m.detailTask.Deadline = &t
+				m.detailTask.Deadline = &picked
 			case fieldScheduled:
-				m.detailTask.Scheduled = &t
+				m.detailTask.Scheduled = &picked
 			}
 		}
 		m.mode = modeNormal
@@ -2226,10 +2208,10 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 	b.WriteString(projectTitleStyle.Render(header))
 	b.WriteString("\n\n")
 
-	// ── Task preview (shown in actionable, not-actionable, enrich, route) ──
+	// ── Task preview (shown in actionable, not-actionable, and route steps) ──
+	// The enrich step renders its own full field list with inline input support.
 	showTask := m.processStep == stepActionable ||
 		m.processStep == stepNotActionable ||
-		m.processStep == stepEnrich ||
 		m.processStep == stepRoute
 	if showTask {
 		m.renderProcessTaskPreview(b)
@@ -2257,29 +2239,22 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 		b.WriteString("  ")
 		b.WriteString(selectedTaskStyle.Render("[t]"))
 		b.WriteString(" trash    ")
-		b.WriteString(selectedTaskStyle.Render("[m]"))
-		b.WriteString(" someday/maybe    ")
 		b.WriteString(stateStyle.Render("[esc] back"))
 		b.WriteString("\n")
 
 	case stepEnrich:
-		var routeLabel string
-		if m.processRoute == routeSomeday {
-			routeLabel = "  Enrich before filing as Someday/Maybe"
-		} else {
-			routeLabel = "  Enrich before routing"
-		}
-		b.WriteString(inputPromptStyle.Render(routeLabel))
+		b.WriteString(inputPromptStyle.Render("  Enrich before routing"))
 		b.WriteString("\n\n")
-		b.WriteString("  ")
+		m.renderProcessEnrichFields(b)
+		b.WriteString("\n  ")
 		b.WriteString(selectedTaskStyle.Render("[t]"))
-		b.WriteString(" edit text    ")
+		b.WriteString(" text  ")
 		b.WriteString(selectedTaskStyle.Render("[g]"))
-		b.WriteString(" tags    ")
+		b.WriteString(" tags  ")
 		b.WriteString(selectedTaskStyle.Render("[d]"))
-		b.WriteString(" deadline    ")
+		b.WriteString(" deadline  ")
 		b.WriteString(selectedTaskStyle.Render("[c]"))
-		b.WriteString(" schedule    ")
+		b.WriteString(" schedule  ")
 		b.WriteString(selectedTaskStyle.Render("[n]"))
 		b.WriteString(" notes")
 		b.WriteString("\n  ")
@@ -2313,7 +2288,8 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 		actions := []struct{ key, desc string }{
 			{"d", "done (<2 min, did it)"},
 			{"w", "waiting for (delegate)"},
-			{"r", "single actions"},
+			{"s", "someday/maybe"},
+			{"r", "single actions (next action)"},
 			{"p", "add to project"},
 			{"n", "new project"},
 		}
@@ -2340,7 +2316,65 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 	}
 }
 
-// renderProcessTaskPreview renders the current task's text and enriched attributes.
+// renderProcessEnrichFields renders the enrichable fields for the current process task,
+// showing the text input inline for whichever field is being edited.
+func (m Model) renderProcessEnrichFields(b *strings.Builder) {
+	task := m.processTask
+	isEditing := m.mode == modeEditingField
+
+	type enrichField struct {
+		label string
+		field detailField
+		value string
+	}
+	fields := []enrichField{
+		{"Text", fieldText, task.Text},
+		{"Tags", fieldTags, strings.Join(task.Tags, ", ")},
+		{"Scheduled", fieldScheduled, formatOptionalTime(task.Scheduled)},
+		{"Deadline", fieldDeadline, formatOptionalTime(task.Deadline)},
+		{"Notes", fieldNotes, task.Notes},
+	}
+
+	for _, f := range fields {
+		editing := isEditing && m.detailField == f.field
+		b.WriteString("  ")
+		b.WriteString(stateStyle.Render(fmt.Sprintf("%-10s", f.label+":")))
+		b.WriteString(" ")
+		if editing {
+			b.WriteString(m.input.View())
+		} else if f.value == "" {
+			b.WriteString(helpStyle.Render("—"))
+		} else if f.field == fieldTags {
+			b.WriteString(tagStyle.Render(f.value))
+		} else if f.field == fieldDeadline || f.field == fieldScheduled {
+			b.WriteString(deadlineStyle.Render(f.value))
+		} else {
+			// Text and notes: truncate long values for display.
+			display := f.value
+			if len(display) > 60 {
+				display = display[:57] + "..."
+			}
+			b.WriteString(display)
+		}
+		b.WriteString("\n")
+	}
+}
+
+// formatOptionalTime formats a *time.Time for display, omitting time when hasTime is false.
+// When t is nil, returns "".
+func formatOptionalTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	if t.Hour() == 0 && t.Minute() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format("2006-01-02 15:04")
+}
+
+// renderProcessTaskPreview renders a compact read-only summary of the current
+// process task. Used in the actionable, not-actionable, and route steps.
+// The enrich step uses renderProcessEnrichFields instead.
 func (m Model) renderProcessTaskPreview(b *strings.Builder) {
 	task := m.processTask
 
@@ -2359,17 +2393,17 @@ func (m Model) renderProcessTaskPreview(b *strings.Builder) {
 		b.WriteString("\n")
 	}
 
-	// Deadline.
-	if task.Deadline != nil {
-		b.WriteString(stateStyle.Render("  Deadline:  "))
-		b.WriteString(deadlineStyle.Render(task.Deadline.Format("2006-01-02 15:04")))
+	// Scheduled (before deadline).
+	if s := formatOptionalTime(task.Scheduled); s != "" {
+		b.WriteString(stateStyle.Render("  Scheduled: "))
+		b.WriteString(deadlineStyle.Render(s))
 		b.WriteString("\n")
 	}
 
-	// Scheduled.
-	if task.Scheduled != nil {
-		b.WriteString(stateStyle.Render("  Scheduled: "))
-		b.WriteString(deadlineStyle.Render(task.Scheduled.Format("2006-01-02 15:04")))
+	// Deadline.
+	if d := formatOptionalTime(task.Deadline); d != "" {
+		b.WriteString(stateStyle.Render("  Deadline:  "))
+		b.WriteString(deadlineStyle.Render(d))
 		b.WriteString("\n")
 	}
 
@@ -2463,13 +2497,13 @@ func (m Model) helpText() string {
 		case stepActionable:
 			return "y: actionable  n: not actionable  s: skip  q: quit"
 		case stepNotActionable:
-			return "t: trash  m: someday/maybe  esc: back"
+			return "t: trash  esc: back"
 		case stepEnrich:
 			return "t: text  g: tags  d: deadline  c: schedule  n: notes  enter: continue  esc: back"
 		case stepEnrichTags:
 			return "tab: add tag  enter: done  esc: cancel"
 		case stepRoute:
-			return "d: done  w: waiting  r: single actions  p: project  n: new project  esc: back"
+			return "d: done  w: waiting  s: someday/maybe  r: single actions  p: project  n: new project  esc: back"
 		case stepDelegatedTo:
 			return "enter: confirm  esc: back"
 		case stepNewProject:
