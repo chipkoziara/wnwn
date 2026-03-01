@@ -8,3 +8,4 @@
 - Shift Scheduled above Deadline when in Process Inbox (or any views)
 - I can type invalid datetimes... not a huge issue
 - Creating new project... do tasks get refiled there? How do I clarify new projects? Feels like we need to spend more time on this workflow. Need to be able to, at minimum, update project names (does this change the slug/filename) in the ux. Projects should also have two attributes: definition of done (description of what done for the project looks like) and a URL field that links out to additional documentation on the project (e.g. Google Drive folder, doc)
+- We should add someday/maybe as another option during the enrich / routing flow. What other changes might we need to make? For example, I  don't want to purchase a mechanical keyboard any time soon so I don't want to clutter my single actions list or projects list, but someday / maybe is where I want it.
