@@ -1,11 +1,17 @@
 # Process Inbox
-- During the "Enrich" phase, when I add a note, I can't see what I'm typing (it works when I hit ENTER after typing--I just can't see anything)
-- During the enrich phase, after I submit a note, when I add another note it just appends. I should be editing the entered text.
-- During the enrich phase, when I click `t` to edit task text, the newly entered text is also not visible, and it's appended similar to the notes feedback
-- If I errantly mark something as "done" or refile to an incorrect location, how should we introduce better steering for users to correct those types of issues? Should we add an undo? Should we stage changes and only execute them after a time delay or when we change views? Should we have a new view for "recently moved" that shows the last moves over the past xx timeframe and users can fix then?
-- If I choose a date from deadline or schedule WITHOUT a time, it shouldn't be a datetime. It should just be a date. Now it looks like I want to do things at midnight :)
-- Should I append timezones to my datetimes?
-- Shift Scheduled above Deadline when in Process Inbox (or any views)
-- I can type invalid datetimes... not a huge issue
-- Creating new project... do tasks get refiled there? How do I clarify new projects? Feels like we need to spend more time on this workflow. Need to be able to, at minimum, update project names (does this change the slug/filename) in the ux. Projects should also have two attributes: definition of done (description of what done for the project looks like) and a URL field that links out to additional documentation on the project (e.g. Google Drive folder, doc)
-- We should add someday/maybe as another option during the enrich / routing flow. What other changes might we need to make? For example, I  don't want to purchase a mechanical keyboard any time soon so I don't want to clutter my single actions list or projects list, but someday / maybe is where I want it.
+
+## Fixed
+
+- ~~During the "Enrich" phase, when I add a note, I can't see what I'm typing (it works when I hit ENTER after typing--I just can't see anything)~~ — Fixed in commit `a17d773`. Enrich step now renders a proper field list with inline input display when editing, same pattern as task detail view.
+- ~~During the enrich phase, after I submit a note, when I add another note it just appends. I should be editing the entered text.~~ — Fixed in `a17d773`. Input is pre-populated with the existing value so subsequent edits replace rather than append.
+- ~~During the enrich phase, when I click `t` to edit task text, the newly entered text is also not visible, and it's appended similar to the notes feedback~~ — Fixed in `a17d773`. Same fix as the notes issue above.
+- ~~If I choose a date from deadline or schedule WITHOUT a time, it shouldn't be a datetime. It should just be a date. Now it looks like I want to do things at midnight :)~~ — Fixed in `a17d773`. Date picker now tracks `hasTime` (true only when the user explicitly toggles time input). Date-only selections display without a time component. Midnight can still be set explicitly by toggling time and entering 00:00.
+- ~~Shift Scheduled above Deadline when in Process Inbox (or any views)~~ — Fixed in `a17d773`. Scheduled now appears before Deadline in both the task detail view and the process inbox enrich step.
+- ~~We should add someday/maybe as another option during the enrich / routing flow.~~ — Fixed in `a17d773`. Someday/maybe `[s]` is now a first-class option in the route step. Not-actionable step is now trash-only (GTD-correct: non-actionables get trashed, not deferred; someday/maybe is for actionable-but-not-now items).
+
+## Deferred (tracked in STATUS.md)
+
+- If I errantly mark something as "done" or refile to an incorrect location, how should we introduce better steering? — Deferred. Recommendation: add a "Recently Modified" saved view once the Views/Query DSL feature is built. See STATUS.md item #5.
+- Should I append timezones to my datetimes? — Decision: No. Naive local time is correct for a personal GTD app. See STATUS.md item #6.
+- I can type invalid datetimes... not a huge issue — Deferred, low priority. Date picker prevents most invalid input. See STATUS.md item #7.
+- Creating new project workflow needs more work (rename, definition of done, URL field) — Deferred as a dedicated "Project Editing" enhancement pass. See STATUS.md item #8.
