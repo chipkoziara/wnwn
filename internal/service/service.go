@@ -118,6 +118,45 @@ func (svc *Service) MoveToList(fromList model.ListType, taskID string, toList mo
 	return nil
 }
 
+// UpdateTask replaces all mutable fields of a task within a list.
+// The task is identified by ID; ID, Created, and Source are never changed.
+// If the new state is "waiting-for" and WaitingSince is not yet set, it is auto-set.
+// If the new state is "done" or "canceled", the task is archived and removed.
+func (svc *Service) UpdateTask(listType model.ListType, updated model.Task) error {
+	list, err := svc.Store.ReadList(listType)
+	if err != nil {
+		return fmt.Errorf("reading list: %w", err)
+	}
+
+	idx := findTaskIndex(list.Tasks, updated.ID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in %s", updated.ID, listType)
+	}
+
+	// Preserve immutable fields.
+	updated.Created = list.Tasks[idx].Created
+	updated.Source = list.Tasks[idx].Source
+
+	// Auto-set WaitingSince when transitioning to waiting-for.
+	if updated.State == model.StateWaitingFor && updated.WaitingSince == nil {
+		now := time.Now().Truncate(24 * time.Hour)
+		updated.WaitingSince = &now
+	}
+
+	list.Tasks[idx] = updated
+
+	// Archive if done or canceled.
+	if updated.State == model.StateDone || updated.State == model.StateCanceled {
+		list.Tasks[idx].Source = string(listType)
+		if err := svc.archiveTask(list.Tasks[idx]); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
+	}
+
+	return svc.Store.WriteList(list)
+}
+
 // TrashTask permanently removes a task from a list (no archive).
 func (svc *Service) TrashTask(listType model.ListType, taskID string) error {
 	list, err := svc.Store.ReadList(listType)

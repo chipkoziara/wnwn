@@ -214,6 +214,49 @@ func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, tas
 	return svc.Store.WriteProject(proj)
 }
 
+// UpdateProjectTask replaces all mutable fields of a task within a project sub-group.
+// ID, Created, and Source are never changed.
+// If the new state is "done" or "canceled", the task is archived and removed.
+func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated model.Task) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+
+	sg := &proj.SubGroups[subGroupIdx]
+	idx := findTaskIndex(sg.Tasks, updated.ID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", updated.ID, sg.Title)
+	}
+
+	// Preserve immutable fields.
+	updated.Created = sg.Tasks[idx].Created
+	updated.Source = sg.Tasks[idx].Source
+
+	// Auto-set WaitingSince when transitioning to waiting-for.
+	if updated.State == model.StateWaitingFor && updated.WaitingSince == nil {
+		now := time.Now().Truncate(24 * time.Hour)
+		updated.WaitingSince = &now
+	}
+
+	sg.Tasks[idx] = updated
+
+	// Archive if done or canceled.
+	if updated.State == model.StateDone || updated.State == model.StateCanceled {
+		sg.Tasks[idx].Source = fmt.Sprintf("projects/%s", filename)
+		if err := svc.archiveTask(sg.Tasks[idx]); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	}
+
+	return svc.Store.WriteProject(proj)
+}
+
 // ReorderTaskInSubGroup moves a task up or down within its sub-group.
 // delta is -1 for up, +1 for down.
 func (svc *Service) ReorderTaskInSubGroup(filename string, subGroupIdx int, taskID string, delta int) error {

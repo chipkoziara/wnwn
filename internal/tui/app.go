@@ -20,20 +20,37 @@ type mode int
 const (
 	modeNormal mode = iota
 	modeAdding
-	modeAddingProject    // creating a new project
-	modeAddingSubGroup   // adding a sub-group to current project
+	modeAddingProject     // creating a new project
+	modeAddingSubGroup    // adding a sub-group to current project
 	modeAddingProjectTask // adding a task to current project sub-group
-	modePickingProject   // picking a project for refile
-	modePickingSubGroup  // picking a sub-group to move a task into
+	modePickingProject    // picking a project for refile
+	modePickingSubGroup   // picking a sub-group to move a task into
+	modeEditingField      // editing a field in the task detail view
 )
 
 // viewState tracks what the user is currently looking at.
 type viewState int
 
 const (
-	viewList    viewState = iota // viewing a task list (inbox or single-actions)
-	viewProjects                // viewing the project list
-	viewProjectDetail           // viewing a single project's sub-groups and tasks
+	viewList          viewState = iota // viewing a task list (inbox or single-actions)
+	viewProjects                       // viewing the project list
+	viewProjectDetail                  // viewing a single project's sub-groups and tasks
+	viewTaskDetail                     // viewing/editing a single task's attributes
+)
+
+// detailField enumerates the fields shown in the task detail view.
+type detailField int
+
+const (
+	fieldText detailField = iota
+	fieldState
+	fieldTags
+	fieldDeadline
+	fieldScheduled
+	fieldURL
+	fieldDelegatedTo
+	fieldNotes
+	fieldCount // sentinel — keep last
 )
 
 // Model is the top-level Bubbletea model for the application.
@@ -53,9 +70,9 @@ type Model struct {
 
 	// Project-related state.
 	projects       []service.ProjectSummary
-	activeProject  *model.Project           // the project being viewed in detail
-	activeFilename string                   // filename of the active project
-	projCursor     int                      // cursor within project detail (flat index across sub-groups)
+	activeProject  *model.Project // the project being viewed in detail
+	activeFilename string         // filename of the active project
+	projCursor     int            // cursor within project detail (flat index across sub-groups)
 
 	// Refile state: task being refiled to a project.
 	refileTaskID   string
@@ -63,9 +80,17 @@ type Model struct {
 	refileFromList model.ListType
 
 	// Sub-group picker state: task being moved between sub-groups.
-	moveTaskID   string
-	moveTaskText string
+	moveTaskID    string
+	moveTaskText  string
 	moveFromSgIdx int
+
+	// Task detail / edit state.
+	detailTask      model.Task     // a working copy of the task being viewed/edited
+	detailField     detailField    // which field is currently selected
+	detailFromView  viewState      // view to return to on esc
+	detailFromList  model.ListType // set when returning to a list view
+	detailFromSgIdx int            // set when returning to a project detail view
+	detailIsProject bool           // true if task lives in a project (not a flat list)
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -107,6 +132,7 @@ func (m Model) loadCurrentList() tea.Msg {
 type listLoadedMsg struct{ list *model.TaskList }
 type taskAddedMsg struct{ task *model.Task }
 type taskRefiledMsg struct{ text string }
+type taskUpdatedMsg struct{ text string }
 type clearStatusMsg struct{}
 type projectsLoadedMsg struct{ projects []service.ProjectSummary }
 type projectDetailMsg struct {
@@ -144,6 +170,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.view == viewProjects {
 			reload = m.loadProjects
 		} else if m.view == viewProjectDetail && m.activeFilename != "" {
+			reload = m.reloadProjectDetail()
+		}
+		return m, tea.Batch(reload, m.clearStatusAfter())
+
+	case taskUpdatedMsg:
+		m.statusMsg = fmt.Sprintf("Saved: %s", msg.text)
+		// Return to the originating view and reload.
+		m.view = m.detailFromView
+		var reload tea.Cmd
+		if m.detailFromView == viewList {
+			m.currentList = m.detailFromList
+			reload = m.loadCurrentList
+		} else if m.detailFromView == viewProjectDetail && m.activeFilename != "" {
 			reload = m.reloadProjectDetail()
 		}
 		return m, tea.Batch(reload, m.clearStatusAfter())
@@ -191,12 +230,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePickingProject(msg)
 		case modePickingSubGroup:
 			return m.updatePickingSubGroup(msg)
+		case modeEditingField:
+			return m.updateEditingField(msg)
 		default:
 			switch m.view {
 			case viewProjects:
 				return m.updateProjectList(msg)
 			case viewProjectDetail:
 				return m.updateProjectDetail(msg)
+			case viewTaskDetail:
+				return m.updateTaskDetail(msg)
 			default:
 				return m.updateNormal(msg)
 			}
@@ -204,7 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Pass through to text input in input modes.
-	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask {
+	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask || m.mode == modeEditingField {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -315,6 +358,19 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.currentList = model.ListIn
 			m.cursor = 0
 			return m, m.loadCurrentList
+		}
+
+	// Open task detail view.
+	case "enter":
+		if m.list != nil && len(m.list.Tasks) > 0 {
+			task := m.list.Tasks[m.cursor]
+			m.detailTask = task
+			m.detailField = fieldText
+			m.detailFromView = viewList
+			m.detailFromList = m.currentList
+			m.detailIsProject = false
+			m.view = viewTaskDetail
+			return m, nil
 		}
 
 	// Add task (inbox only).
@@ -526,6 +582,21 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "G":
 		if len(flatItems) > 0 {
 			m.projCursor = len(flatItems) - 1
+		}
+
+	case "enter":
+		// Open task detail for the selected task.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				m.detailTask = item.task
+				m.detailField = fieldText
+				m.detailFromView = viewProjectDetail
+				m.detailIsProject = true
+				m.detailFromSgIdx = item.sgIdx
+				m.view = viewTaskDetail
+				return m, nil
+			}
 		}
 
 	case "a":
@@ -819,10 +890,10 @@ func (m Model) updateAddingProjectTask(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 // flatItem represents a row in the flattened project detail view.
 type flatItem struct {
-	isTask bool
-	sgIdx  int
+	isTask  bool
+	sgIdx   int
 	sgTitle string
-	task   model.Task
+	task    model.Task
 }
 
 // flattenProject creates a flat list of items for the project detail view.
@@ -908,6 +979,8 @@ func (m Model) View() tea.View {
 		m.renderProjectPicker(&b)
 	case m.mode == modePickingSubGroup:
 		m.renderSubGroupPicker(&b)
+	case m.view == viewTaskDetail:
+		m.renderTaskDetailView(&b)
 	case m.view == viewProjects:
 		m.renderProjectListView(&b)
 	case m.view == viewProjectDetail:
@@ -934,6 +1007,7 @@ func (m Model) View() tea.View {
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
 	}
+	// Editing field input is rendered inline in renderTaskDetailView.
 
 	// Status message.
 	if m.statusMsg != "" {
@@ -1193,6 +1267,337 @@ func (m Model) renderTask(idx int, task model.Task) string {
 	return b.String()
 }
 
+// ── Task detail view ────────────────────────────────────────────────────────
+
+// fieldLabel returns a display label for each editable field.
+func fieldLabel(f detailField) string {
+	switch f {
+	case fieldText:
+		return "Task"
+	case fieldState:
+		return "State"
+	case fieldTags:
+		return "Tags"
+	case fieldDeadline:
+		return "Deadline"
+	case fieldScheduled:
+		return "Scheduled"
+	case fieldURL:
+		return "URL"
+	case fieldDelegatedTo:
+		return "Delegated to"
+	case fieldNotes:
+		return "Notes"
+	}
+	return ""
+}
+
+// fieldValue returns the current display value for a field from detailTask.
+func (m Model) fieldValue(f detailField) string {
+	switch f {
+	case fieldText:
+		return m.detailTask.Text
+	case fieldState:
+		if m.detailTask.State == model.StateEmpty {
+			return "(unprocessed)"
+		}
+		return string(m.detailTask.State)
+	case fieldTags:
+		if len(m.detailTask.Tags) == 0 {
+			return ""
+		}
+		return strings.Join(m.detailTask.Tags, ", ")
+	case fieldDeadline:
+		if m.detailTask.Deadline == nil {
+			return ""
+		}
+		return m.detailTask.Deadline.Format("2006-01-02 15:04")
+	case fieldScheduled:
+		if m.detailTask.Scheduled == nil {
+			return ""
+		}
+		return m.detailTask.Scheduled.Format("2006-01-02 15:04")
+	case fieldURL:
+		return m.detailTask.URL
+	case fieldDelegatedTo:
+		return m.detailTask.DelegatedTo
+	case fieldNotes:
+		return m.detailTask.Notes
+	}
+	return ""
+}
+
+// renderTaskDetailView renders the task detail / edit view.
+func (m Model) renderTaskDetailView(b *strings.Builder) {
+	b.WriteString(projectTitleStyle.Render("Task Detail"))
+	b.WriteString("\n\n")
+
+	editableFields := []detailField{
+		fieldText, fieldState, fieldTags, fieldDeadline,
+		fieldScheduled, fieldURL, fieldDelegatedTo, fieldNotes,
+	}
+
+	for _, f := range editableFields {
+		isSelected := f == m.detailField
+		isEditing := isSelected && m.mode == modeEditingField
+
+		label := fieldLabel(f)
+		value := m.fieldValue(f)
+
+		// Cursor.
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+		} else {
+			b.WriteString("   ")
+		}
+
+		// Label.
+		if isSelected {
+			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		} else {
+			b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		}
+		b.WriteString(" ")
+
+		// Value or input.
+		if isEditing {
+			b.WriteString(m.input.View())
+		} else if value == "" {
+			b.WriteString(helpStyle.Render("—"))
+		} else if f == fieldState {
+			b.WriteString(stateStyle.Render(value))
+		} else if f == fieldDeadline || f == fieldScheduled {
+			b.WriteString(deadlineStyle.Render(value))
+		} else if f == fieldTags {
+			b.WriteString(tagStyle.Render(value))
+		} else {
+			b.WriteString(value)
+		}
+		b.WriteString("\n")
+	}
+
+	// Separator before read-only metadata.
+	b.WriteString("\n")
+	b.WriteString(stateStyle.Render("  ─── read-only ───────────────────────────────"))
+	b.WriteString("\n")
+
+	// Created.
+	b.WriteString("   ")
+	b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "Created:")))
+	b.WriteString(" ")
+	b.WriteString(stateStyle.Render(m.detailTask.Created.Format("2006-01-02 15:04")))
+	b.WriteString("\n")
+
+	// Waiting since (only when relevant).
+	if m.detailTask.WaitingSince != nil {
+		b.WriteString("   ")
+		b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "Waiting since:")))
+		b.WriteString(" ")
+		b.WriteString(stateStyle.Render(m.detailTask.WaitingSince.Format("2006-01-02")))
+		b.WriteString("\n")
+	}
+
+	// ID.
+	b.WriteString("   ")
+	b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "ID:")))
+	b.WriteString(" ")
+	b.WriteString(stateStyle.Render(m.detailTask.ID))
+	b.WriteString("\n")
+
+	// Source (only when set).
+	if m.detailTask.Source != "" {
+		b.WriteString("   ")
+		b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "Source:")))
+		b.WriteString(" ")
+		b.WriteString(stateStyle.Render(m.detailTask.Source))
+		b.WriteString("\n")
+	}
+}
+
+// updateTaskDetail handles keys in the task detail view (normal mode within the view).
+func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		// Discard changes and return to originating view.
+		m.view = m.detailFromView
+		if m.detailFromView == viewList {
+			m.currentList = m.detailFromList
+		}
+		return m, nil
+
+	case "j", "down":
+		if int(m.detailField) < int(fieldCount)-1 {
+			m.detailField++
+		}
+
+	case "k", "up":
+		if m.detailField > 0 {
+			m.detailField--
+		}
+
+	case "g":
+		m.detailField = fieldText
+
+	case "G":
+		m.detailField = fieldNotes
+
+	case "e", "enter":
+		// Enter edit mode for the selected field.
+		// State uses space/enter to cycle instead of text input.
+		if m.detailField == fieldState {
+			// Cycle state on enter.
+			m.detailTask.State = cycleState(m.detailTask.State)
+			return m, nil
+		}
+		m.mode = modeEditingField
+		m.input.Reset()
+		m.input.Placeholder = fieldLabel(m.detailField)
+		m.input.SetValue(m.fieldValue(m.detailField))
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "space":
+		// Cycle state with space too (convenient shortcut on state field).
+		if m.detailField == fieldState {
+			m.detailTask.State = cycleState(m.detailTask.State)
+		}
+
+	case "s":
+		// Save and return.
+		return m, m.saveDetailTask()
+	}
+
+	return m, nil
+}
+
+// cycleState advances through task states in order.
+func cycleState(s model.TaskState) model.TaskState {
+	states := []model.TaskState{
+		model.StateEmpty,
+		model.StateNextAction,
+		model.StateWaitingFor,
+		model.StateSomeday,
+		model.StateDone,
+		model.StateCanceled,
+	}
+	for i, st := range states {
+		if st == s {
+			return states[(i+1)%len(states)]
+		}
+	}
+	return model.StateNextAction
+}
+
+// updateEditingField handles keys when editing a field value.
+func (m Model) updateEditingField(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		// Commit the edit.
+		val := strings.TrimSpace(m.input.Value())
+		m.applyFieldEdit(val)
+		m.mode = modeNormal
+		return m, nil
+
+	case "esc":
+		// Cancel the edit, revert to previous value.
+		m.mode = modeNormal
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+// applyFieldEdit writes the edited string value back into the detailTask.
+func (m *Model) applyFieldEdit(val string) {
+	switch m.detailField {
+	case fieldText:
+		if val != "" {
+			m.detailTask.Text = val
+		}
+	case fieldTags:
+		if val == "" {
+			m.detailTask.Tags = nil
+		} else {
+			parts := strings.Split(val, ",")
+			tags := make([]string, 0, len(parts))
+			for _, p := range parts {
+				if t := strings.TrimSpace(p); t != "" {
+					tags = append(tags, t)
+				}
+			}
+			m.detailTask.Tags = tags
+		}
+	case fieldDeadline:
+		if val == "" {
+			m.detailTask.Deadline = nil
+		} else {
+			t := parseDateTime(val)
+			if t != nil {
+				m.detailTask.Deadline = t
+			}
+		}
+	case fieldScheduled:
+		if val == "" {
+			m.detailTask.Scheduled = nil
+		} else {
+			t := parseDateTime(val)
+			if t != nil {
+				m.detailTask.Scheduled = t
+			}
+		}
+	case fieldURL:
+		m.detailTask.URL = val
+	case fieldDelegatedTo:
+		m.detailTask.DelegatedTo = val
+		if val != "" && m.detailTask.State != model.StateWaitingFor {
+			m.detailTask.State = model.StateWaitingFor
+		}
+	case fieldNotes:
+		m.detailTask.Notes = val
+	}
+}
+
+// parseDateTime attempts to parse a date/time string in several common formats.
+func parseDateTime(s string) *time.Time {
+	formats := []string{
+		"2006-01-02 15:04",
+		"2006-01-02T15:04",
+		"2006-01-02",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return &t
+		}
+	}
+	return nil
+}
+
+// saveDetailTask writes the working copy back to disk and returns to the prior view.
+func (m Model) saveDetailTask() tea.Cmd {
+	task := m.detailTask
+	isProject := m.detailIsProject
+	filename := m.activeFilename
+	sgIdx := m.detailFromSgIdx
+	listType := m.detailFromList
+	return func() tea.Msg {
+		var err error
+		if isProject {
+			err = m.svc.UpdateProjectTask(filename, sgIdx, task)
+		} else {
+			err = m.svc.UpdateTask(listType, task)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskUpdatedMsg{task.Text}
+	}
+}
+
 // renderTabBar renders the list switcher tabs.
 func (m Model) renderTabBar() string {
 	inboxLabel := " 1 Inbox "
@@ -1240,6 +1645,12 @@ func (m Model) helpText() string {
 	if m.mode == modePickingProject || m.mode == modePickingSubGroup {
 		return "enter: select  esc: cancel  j/k: navigate"
 	}
+	if m.view == viewTaskDetail {
+		if m.mode == modeEditingField {
+			return "enter: save field  esc: cancel edit"
+		}
+		return "j/k: navigate fields  e/enter: edit  space: cycle state  s: save & back  esc: back (discard)"
+	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
 
@@ -1247,12 +1658,12 @@ func (m Model) helpText() string {
 	case viewProjects:
 		return "enter: open  a: new project  " + nav
 	case viewProjectDetail:
-		return "a: add task  n: new sub-group  d: done  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
+		return "enter: detail  a: add task  n: new sub-group  d: done  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
-			return "a: add  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
+			return "enter: detail  a: add  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 		}
-		return "p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
+		return "enter: detail  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 	}
 }
 
