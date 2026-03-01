@@ -135,6 +135,8 @@ Tasks are represented as Markdown checkbox list items. Metadata is stored in a f
 
 **Source of truth:** The `state` metadata field is the single source of truth. The checkbox is derived from the state and kept in sync by the application (`done` → `[x]`, `canceled` → `[-]`, all other states → `[ ]`). If a user hand-edits a file and the checkbox and state disagree, the `state` field wins and the checkbox will be corrected on next save.
 
+**YAML quoting:** Tags prefixed with `@` (context tags) must be quoted in YAML because `@` is a reserved character. The application handles this automatically when writing files. Example: `tags: ["@computer", deep-work]`.
+
 **Full task example:**
 ```markdown
 - [ ] Book flights to/from Hawaii
@@ -145,7 +147,7 @@ Tasks are represented as Markdown checkbox list items. Metadata is stored in a f
   scheduled: 2026-03-10T09:00
   deadline: 2026-03-15T17:00
   url: https://flights.example.com
-  tags: [travel, @computer]
+  tags: [travel, "@computer"]
   ```
 
   Check Southwest and United for direct flights from SFO.
@@ -170,7 +172,7 @@ Tasks are represented as Markdown checkbox list items. Metadata is stored in a f
   state: waiting-for
   delegated_to: Marvin
   waiting_since: 2026-02-20
-  tags: [@office, reports]
+  tags: ["@office", reports]
   ```
 ```
 
@@ -181,7 +183,7 @@ Tasks are represented as Markdown checkbox list items. Metadata is stored in a f
   id: 01JNQXDJ8QRST0VWXY3CEFG1PQ
   created: 2026-02-15T09:00
   state: done
-  tags: [@office]
+  tags: ["@office"]
   ```
 ```
 
@@ -203,7 +205,7 @@ type: in
 - [ ] Schedule dentist appointment
   ```yaml
   id: 01JNQX8B2KFGH4RSVW1MPAT9XY
-  tags: [@errands]
+  tags: ["@errands"]
   ```
 
 - [ ] Read article on distributed systems
@@ -224,7 +226,7 @@ type: single-actions
   ```yaml
   id: 01JNQXHM4STUV6WXYZ7AFGH2RS
   state: next-action
-  tags: [@errands]
+  tags: ["@errands"]
   ```
 
 - [ ] Book flights to/from Hawaii
@@ -232,7 +234,7 @@ type: single-actions
   id: 01JNQX7K9MZYZ3VDEHGR8N0P6F
   state: next-action
   deadline: 2026-03-15T17:00
-  tags: [travel, @computer]
+  tags: [travel, "@computer"]
   ```
 
   Check Southwest and United for direct flights from SFO.
@@ -248,7 +250,7 @@ title: Launch Website
 id: 01JNQXKP7VWXY9ZAB0CDEF3GHI
 state: next-action
 deadline: 2026-06-01T00:00
-tags: [project, launch, @office]
+tags: [project, launch, "@office"]
 ---
 
 # Launch Website
@@ -264,7 +266,7 @@ deadline: 2026-04-01T00:00
   ```yaml
   id: 01JNQXMR9XYZA1BCD2EFGH5IJK
   state: next-action
-  tags: [@computer]
+  tags: ["@computer"]
   ```
 
 - [ ] Review mockups with stakeholders
@@ -284,13 +286,14 @@ state: some-day/maybe
 - [ ] Set up CI/CD pipeline
   ```yaml
   id: 01JNQXQU2ABCD4EFG5HIJK8LMN
-  tags: [@computer, deep-work]
+  tags: ["@computer", deep-work]
   ```
 
 - [ ] Implement responsive homepage
   ```yaml
   id: 01JNQXRV3BCDE5FGH6IJKL9MNO
-  tags: [@computer, deep-work]
+  created: 2026-03-01T10:15
+  tags: ["@computer", deep-work]
   ```
 
   Must support mobile, tablet, and desktop breakpoints.
@@ -305,7 +308,7 @@ deadline: 2026-06-01T00:00
 - [ ] Write launch announcement
   ```yaml
   id: 01JNQXTX5DEFG7HIJ8KLMN1OPQ
-  tags: [@computer]
+  tags: ["@computer"]
   ```
 
 - [ ] Coordinate with marketing on social posts
@@ -314,7 +317,7 @@ deadline: 2026-06-01T00:00
   state: waiting-for
   delegated_to: Sarah
   waiting_since: 2026-02-25
-  tags: [@office]
+  tags: ["@office"]
   ```
 ```
 
