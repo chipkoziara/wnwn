@@ -78,4 +78,14 @@ var (
 	statusMsgStyle = lipgloss.NewStyle().
 			Foreground(colorSuccess).
 			Italic(true)
+
+	projectTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorPrimary).
+				PaddingLeft(2)
+
+	subGroupStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorText).
+			Underline(true)
 )
