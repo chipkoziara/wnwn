@@ -64,4 +64,18 @@ var (
 	inputPromptStyle = lipgloss.NewStyle().
 				Foreground(colorPrimary).
 				Bold(true)
+
+	activeTabStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorText).
+			Background(colorPrimary).
+			Padding(0, 1)
+
+	inactiveTabStyle = lipgloss.NewStyle().
+				Foreground(colorDimText).
+				Padding(0, 1)
+
+	statusMsgStyle = lipgloss.NewStyle().
+			Foreground(colorSuccess).
+			Italic(true)
 )

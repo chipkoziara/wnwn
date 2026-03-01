@@ -4,6 +4,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -23,15 +24,17 @@ const (
 
 // Model is the top-level Bubbletea model for the application.
 type Model struct {
-	svc    *service.Service
-	store  *store.Store
-	list   *model.TaskList
-	cursor int
-	mode   mode
-	input  textinput.Model
-	width  int
-	height int
-	err    error
+	svc         *service.Service
+	store       *store.Store
+	list        *model.TaskList
+	currentList model.ListType
+	cursor      int
+	mode        mode
+	input       textinput.Model
+	width       int
+	height      int
+	statusMsg   string // temporary status message (e.g. "Task refiled")
+	err         error
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -45,23 +48,24 @@ func New(dataDir string) Model {
 	ti.SetWidth(60)
 
 	return Model{
-		svc:   svc,
-		store: s,
-		input: ti,
+		svc:         svc,
+		store:       s,
+		currentList: model.ListIn,
+		input:       ti,
 	}
 }
 
-// Init loads the inbox on startup.
+// Init loads the current list on startup.
 func (m Model) Init() tea.Cmd {
-	return m.loadInbox
+	return m.loadCurrentList
 }
 
-// loadInbox is a tea.Cmd that reads the inbox from disk.
-func (m Model) loadInbox() tea.Msg {
+// loadCurrentList is a tea.Cmd that reads the current list from disk.
+func (m Model) loadCurrentList() tea.Msg {
 	if err := m.store.Init(); err != nil {
 		return errMsg{err}
 	}
-	list, err := m.store.ReadList(model.ListIn)
+	list, err := m.store.ReadList(m.currentList)
 	if err != nil {
 		return errMsg{err}
 	}
@@ -71,6 +75,8 @@ func (m Model) loadInbox() tea.Msg {
 // Messages
 type listLoadedMsg struct{ list *model.TaskList }
 type taskAddedMsg struct{ task *model.Task }
+type taskRefiledMsg struct{ text string }
+type clearStatusMsg struct{}
 type errMsg struct{ err error }
 
 // Update handles messages and user input.
@@ -88,14 +94,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case taskAddedMsg:
-		// Reload the list to pick up the new task.
-		return m, m.loadInbox
+		m.statusMsg = fmt.Sprintf("Added: %s", msg.task.Text)
+		return m, tea.Batch(m.loadCurrentList, m.clearStatusAfter())
+
+	case taskRefiledMsg:
+		m.statusMsg = fmt.Sprintf("Refiled: %s", msg.text)
+		return m, tea.Batch(m.loadCurrentList, m.clearStatusAfter())
+
+	case clearStatusMsg:
+		m.statusMsg = ""
+		return m, nil
 
 	case errMsg:
 		m.err = msg.err
 		return m, nil
 
 	case tea.KeyPressMsg:
+		// Clear any status message on keypress.
+		m.statusMsg = ""
+
 		if m.mode == modeAdding {
 			return m.updateAdding(msg)
 		}
@@ -112,12 +129,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// clearStatusAfter returns a Cmd that clears the status message after a delay.
+func (m Model) clearStatusAfter() tea.Cmd {
+	return tea.Tick(time.Second*3, func(time.Time) tea.Msg {
+		return clearStatusMsg{}
+	})
+}
+
 // updateNormal handles keys in normal (browsing) mode.
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
+	// Navigation.
 	case "j", "down":
 		if m.list != nil && m.cursor < len(m.list.Tasks)-1 {
 			m.cursor++
@@ -136,30 +161,132 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cursor = len(m.list.Tasks) - 1
 		}
 
+	// List switching.
+	case "1":
+		if m.currentList != model.ListIn {
+			m.currentList = model.ListIn
+			m.cursor = 0
+			return m, m.loadCurrentList
+		}
+
+	case "2":
+		if m.currentList != model.ListSingleActions {
+			m.currentList = model.ListSingleActions
+			m.cursor = 0
+			return m, m.loadCurrentList
+		}
+
+	case "tab":
+		if m.currentList == model.ListIn {
+			m.currentList = model.ListSingleActions
+		} else {
+			m.currentList = model.ListIn
+		}
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	// Add task (inbox only).
 	case "a":
+		if m.currentList != model.ListIn {
+			m.statusMsg = "Can only add tasks to the inbox"
+			return m, m.clearStatusAfter()
+		}
 		m.mode = modeAdding
 		m.input.Reset()
 		cmd := m.input.Focus()
 		return m, cmd
 
+	// Refile to single-actions as next-action (inbox only).
+	case "r":
+		if m.currentList != model.ListIn || m.list == nil || len(m.list.Tasks) == 0 {
+			return m, nil
+		}
+		task := m.list.Tasks[m.cursor]
+		return m, m.refileTask(task.ID, task.Text, model.ListSingleActions, model.StateNextAction)
+
+	// Move to someday/maybe (inbox or single-actions).
+	case "s":
+		if m.list == nil || len(m.list.Tasks) == 0 {
+			return m, nil
+		}
+		task := m.list.Tasks[m.cursor]
+		return m, m.setStateSomeday(task.ID, task.Text)
+
+	// Set to waiting-for.
+	case "w":
+		if m.list == nil || len(m.list.Tasks) == 0 {
+			return m, nil
+		}
+		task := m.list.Tasks[m.cursor]
+		return m, m.setStateWaiting(task.ID, task.Text)
+
+	// Mark done.
 	case "d":
-		// Mark done.
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
-			return m, m.loadInbox
+			return m, m.loadCurrentList
 		}
 
+	// Trash task.
 	case "x":
-		// Trash task.
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.TrashTask(m.list.Type, task.ID)
-			return m, m.loadInbox
+			return m, m.loadCurrentList
 		}
 	}
 
 	return m, nil
+}
+
+// refileTask moves a task from the current list to a destination list.
+func (m Model) refileTask(taskID, text string, destList model.ListType, newState model.TaskState) tea.Cmd {
+	return func() tea.Msg {
+		err := m.svc.MoveToList(m.currentList, taskID, destList, newState)
+		if err != nil {
+			return errMsg{err}
+		}
+		return taskRefiledMsg{text}
+	}
+}
+
+// setStateSomeday sets a task to someday/maybe state.
+// If on inbox, refiles to single-actions. If already on single-actions, updates in place.
+func (m Model) setStateSomeday(taskID, text string) tea.Cmd {
+	return func() tea.Msg {
+		if m.currentList == model.ListIn {
+			err := m.svc.MoveToList(model.ListIn, taskID, model.ListSingleActions, model.StateSomeday)
+			if err != nil {
+				return errMsg{err}
+			}
+		} else {
+			err := m.svc.UpdateState(m.currentList, taskID, model.StateSomeday)
+			if err != nil {
+				return errMsg{err}
+			}
+		}
+		return taskRefiledMsg{text}
+	}
+}
+
+// setStateWaiting sets a task to waiting-for state.
+// If on inbox, refiles to single-actions. If already on single-actions, updates in place.
+func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
+	return func() tea.Msg {
+		if m.currentList == model.ListIn {
+			err := m.svc.MoveToList(model.ListIn, taskID, model.ListSingleActions, model.StateWaitingFor)
+			if err != nil {
+				return errMsg{err}
+			}
+		} else {
+			err := m.svc.UpdateState(m.currentList, taskID, model.StateWaitingFor)
+			if err != nil {
+				return errMsg{err}
+			}
+		}
+		return taskRefiledMsg{text}
+	}
 }
 
 // updateAdding handles keys when the user is typing a new task.
@@ -212,14 +339,17 @@ func (m Model) View() tea.View {
 
 	var b strings.Builder
 
-	// Title bar.
-	title := titleStyle.Render(fmt.Sprintf(" Inbox (%d)", len(m.list.Tasks)))
-	b.WriteString(title)
+	// Tab bar.
+	b.WriteString(m.renderTabBar())
 	b.WriteString("\n\n")
 
 	// Task list.
 	if len(m.list.Tasks) == 0 {
-		b.WriteString(taskStyle.Render("No tasks in the inbox. Press 'a' to add one."))
+		emptyMsg := "No tasks here."
+		if m.currentList == model.ListIn {
+			emptyMsg = "Inbox is empty. Press 'a' to add a task."
+		}
+		b.WriteString(taskStyle.Render(emptyMsg))
 		b.WriteString("\n")
 	} else {
 		for i, task := range m.list.Tasks {
@@ -236,13 +366,16 @@ func (m Model) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	// Status bar / help.
-	b.WriteString("\n")
-	if m.mode == modeAdding {
-		b.WriteString(helpStyle.Render("  enter: save  esc: cancel"))
-	} else {
-		b.WriteString(helpStyle.Render("  a: add  d: done  x: trash  j/k: navigate  g/G: top/bottom  q: quit"))
+	// Status message.
+	if m.statusMsg != "" {
+		b.WriteString("\n")
+		b.WriteString(statusMsgStyle.Render("  " + m.statusMsg))
+		b.WriteString("\n")
 	}
+
+	// Help bar.
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("  " + m.helpText()))
 	b.WriteString("\n")
 
 	v.SetContent(b.String())
@@ -297,6 +430,38 @@ func (m Model) renderTask(idx int, task model.Task) string {
 	}
 
 	return b.String()
+}
+
+// renderTabBar renders the list switcher tabs.
+func (m Model) renderTabBar() string {
+	inboxLabel := " 1 Inbox "
+	actionsLabel := " 2 Actions "
+
+	taskCount := 0
+	if m.list != nil {
+		taskCount = len(m.list.Tasks)
+	}
+
+	if m.currentList == model.ListIn {
+		return activeTabStyle.Render(fmt.Sprintf("%s(%d)", inboxLabel, taskCount)) +
+			"  " + inactiveTabStyle.Render(actionsLabel)
+	}
+	return inactiveTabStyle.Render(inboxLabel) +
+		"  " + activeTabStyle.Render(fmt.Sprintf("%s(%d)", actionsLabel, taskCount))
+}
+
+// helpText returns contextual help based on mode and current list.
+func (m Model) helpText() string {
+	if m.mode == modeAdding {
+		return "enter: save  esc: cancel"
+	}
+
+	base := "j/k: navigate  g/G: top/bottom  tab: switch list"
+
+	if m.currentList == model.ListIn {
+		return "a: add  r: refile  s: someday  w: waiting  d: done  x: trash  " + base
+	}
+	return "s: someday  w: waiting  d: done  x: trash  " + base + "  q: quit"
 }
 
 // clampCursor ensures the cursor is within bounds.
