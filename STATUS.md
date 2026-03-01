@@ -20,6 +20,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
   - Archiving: monthly archive files with source tracking
+  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields, handle archive-on-done/canceled, auto-set waiting_since
 
 ### CLI (`cmd/gtd/main.go`)
 - `gtd` (no args): launches TUI
@@ -34,6 +35,7 @@ Three-tab interface (Inbox, Actions, Projects) with these features:
 - j/k, arrow keys, g/G navigation
 - Tab and 1/2/3 to switch between views
 - Status messages with auto-clear
+- `enter`: open task detail view
 
 **Inbox view:**
 - `a`: add task inline
@@ -55,12 +57,34 @@ Three-tab interface (Inbox, Actions, Projects) with these features:
 
 **Project detail view:**
 - Flattened sub-group headings + tasks
+- `enter`: open task detail view for selected task
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `d`: mark task done
 - `ctrl+j`/`ctrl+k`: reorder task within sub-group (cursor follows)
 - `m`: move task to a different sub-group (picker)
 - `esc`: back to project list
+
+**Task detail view** (`viewTaskDetail`):
+- Opens from any list or project detail view with `enter`
+- Shows all task fields in a navigable list: task text, state, tags, deadline, scheduled, URL, delegated_to, notes
+- `j`/`k`: navigate between fields
+- `e` or `enter`: edit the selected field
+  - **State field**: cycles through all states (empty → next-action → waiting-for → some-day/maybe → done → canceled); `space` also cycles
+  - **Deadline / Scheduled fields**: opens the calendar date picker (see below)
+  - **All other fields**: opens inline text input; `enter` confirms, `esc` cancels
+- `s`: save all changes and return to previous view
+- `esc`: discard changes and return to previous view
+- Read-only section shows: created date, waiting_since (if set), ID, source (if archived)
+
+**Date picker** (`internal/tui/datepicker/`):
+- Custom-built calendar component (no compatible third-party library exists for Bubbletea v2)
+- 7-column monthly calendar grid with day-of-week headers
+- Navigation: arrow keys / hjkl move one day; j/k jump a full week; `<`/`>` (also `,`/`.` or `[`/`]`) change month
+- Visual feedback: selected day highlighted in purple; today accented in bold purple
+- `t`: toggle optional time input row (HH and MM fields, validated 0–23 / 0–59; tab moves between them)
+- `enter`: confirm selection; `esc`: cancel (preserves existing value)
+- Pre-populates with existing date when editing a field that already has a value
 
 ### File Format
 ```
@@ -76,7 +100,7 @@ Three-tab interface (Inbox, Actions, Projects) with these features:
 Tasks use Markdown checkboxes with indented fenced YAML metadata blocks. See `BRD.md` section 4 for full spec with examples.
 
 ### Dependencies
-- Go 1.26 (via mise)
+- Go 1.25 (via mise)
 - charm.land/bubbletea/v2, charm.land/lipgloss/v2, charm.land/bubbles/v2
 - github.com/oklog/ulid/v2
 - gopkg.in/yaml.v3
@@ -86,15 +110,14 @@ Tasks use Markdown checkboxes with indented fenced YAML metadata blocks. See `BR
 Prioritized by impact:
 
 ### High Value (daily usability)
-1. **Task detail/edit view** - Cannot view or edit task attributes (notes, deadline, tags, URL, delegated_to) from TUI. Only way to set these is via CLI flags on `gtd add`. This is the biggest usability gap.
-2. **Process inbox mode** - The guided GTD decision tree for processing inbox items one at a time. All service primitives exist, just need the wizard UX flow (BRD section 3).
+1. **Process inbox mode** - The guided GTD decision tree for processing inbox items one at a time. All service primitives exist, just need the wizard UX flow (BRD section 3).
 
 ### Power Features
-3. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
-4. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
-5. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
-6. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
-7. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+2. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
+3. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
+4. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
+5. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
+6. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
 - None currently open. All tests pass (31 total: 8 parser + 23 service).
@@ -102,10 +125,13 @@ Prioritized by impact:
 ## Architecture Notes
 
 - **Bubbletea v2** (released 2026-02-24): Uses `tea.View` struct return from `View()` (not string), `tea.KeyPressMsg` (not `tea.KeyMsg`), import paths at `charm.land/*` (not `github.com/charmbracelet/*`).
-- The TUI uses a `viewState` enum (`viewList`, `viewProjects`, `viewProjectDetail`) and a `mode` enum for input states (`modeNormal`, `modeAdding`, `modePickingProject`, etc.).
+- The TUI uses a `viewState` enum (`viewList`, `viewProjects`, `viewProjectDetail`, `viewTaskDetail`) and a `mode` enum for input states (`modeNormal`, `modeAdding`, `modePickingProject`, `modeEditingField`, `modePickingDate`, etc.).
 - `loadProjectDetail(filename)` resets cursor (for initial entry); `reloadProjectDetail()` preserves cursor (for mutations). This pattern was added to fix cursor-reset bugs.
 - The parser handles two types of YAML fenced blocks: indented (2-space, for task metadata) and top-level (for sub-group metadata in project files).
 - `@`-prefixed tags must be quoted in YAML (`"@computer"` not `@computer`). The writer handles this automatically.
+- **Task detail working copy**: when the user opens task detail, a copy of the task (`detailTask`) is held in the model and mutated locally. Changes are only persisted when the user presses `s` (save), which calls `UpdateTask` or `UpdateProjectTask`. `esc` discards the copy.
+- **Date picker composition**: `internal/tui/datepicker` is a standalone sub-model following the Bubbletea component pattern. Parent forwards all `tea.Msg` to it while `modePickingDate` is active; result is read back via `Result()` after each `Update` cycle.
+- **No third-party date picker**: `bubble-datepicker` and similar libraries use the old `github.com/charmbracelet/bubbletea` v1 import path and are incompatible with this project's v2 dependency. The date picker is custom-built.
 
 ## How to Run
 
