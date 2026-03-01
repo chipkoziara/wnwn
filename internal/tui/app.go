@@ -38,7 +38,41 @@ const (
 	viewProjects                       // viewing the project list
 	viewProjectDetail                  // viewing a single project's sub-groups and tasks
 	viewTaskDetail                     // viewing/editing a single task's attributes
+	viewProcessInbox                   // guided GTD decision tree for processing inbox items
 )
+
+// processStep enumerates the steps in the process inbox decision tree.
+type processStep int
+
+const (
+	stepActionable    processStep = iota // "Is it actionable?" decision
+	stepNotActionable                    // "Trash or Someday/Maybe?" decision
+	stepEnrich                           // Enrich task fields hub (edit text/tags/deadline/schedule/notes)
+	stepEnrichTags                       // Adding tags one at a time (tab to confirm each)
+	stepRoute                            // "Where does it go?" routing decision
+	stepDelegatedTo                      // Text input for delegated_to
+	stepNewProject                       // Text input for new project title
+	stepComplete                         // Summary screen (inbox processed)
+)
+
+// processRoute determines what happens when the user confirms the enrich step.
+type processRoute int
+
+const (
+	routeActionable processRoute = iota // enrich -> route step
+	routeSomeday                        // enrich -> refile as someday/maybe
+)
+
+// processStats tracks counts per action type for the completion summary.
+type processStats struct {
+	trashed   int
+	someday   int
+	done      int
+	waiting   int
+	refiled   int // to single actions
+	toProject int
+	skipped   int
+}
 
 // detailField enumerates the fields shown in the task detail view.
 type detailField int
@@ -97,6 +131,15 @@ type Model struct {
 	// Date picker state.
 	datePicker      datepicker.Model // calendar date picker component
 	datePickerField detailField      // which detail field the picker is editing
+
+	// Process inbox state.
+	processItems []model.Task // snapshot of inbox tasks taken at activation
+	processIdx   int          // index of the current item being processed (0-based)
+	processStep  processStep  // current step in the decision tree
+	processTask  model.Task   // working copy of the current item (mutated during enrichment)
+	processRoute processRoute // determines behaviour on enrich confirm: route or someday
+	processTags  []string     // tag accumulator for stepEnrichTags (tab-separated entry)
+	processStats processStats // running totals for the completion summary
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -147,8 +190,18 @@ type projectDetailMsg struct {
 	filename    string
 	resetCursor bool // true when entering detail view for the first time
 }
-type projectCreatedMsg struct{ title string }
+type projectCreatedMsg struct {
+	title    string
+	filename string // slug filename of the created project
+}
 type errMsg struct{ err error }
+
+// processInboxLoadedMsg carries the inbox snapshot when entering process inbox mode.
+type processInboxLoadedMsg struct{ tasks []model.Task }
+
+// processAdvancedMsg signals that the current item was acted on and we should advance.
+// The action field is used to update processStats.
+type processAdvancedMsg struct{ action string }
 
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -169,6 +222,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.loadCurrentList, m.clearStatusAfter())
 
 	case taskRefiledMsg:
+		// Process inbox uses processAdvancedMsg for advancing; skip list reload.
+		if m.view == viewProcessInbox {
+			return m, nil
+		}
 		m.statusMsg = fmt.Sprintf("Refiled: %s", msg.text)
 		// Reload whatever view we're on.
 		var reload tea.Cmd
@@ -209,8 +266,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case projectCreatedMsg:
+		if m.view == viewProcessInbox {
+			// Project was created during process inbox; now refile the current task into it.
+			return m, m.processRefileToNewProject(msg.filename)
+		}
 		m.statusMsg = fmt.Sprintf("Created project: %s", msg.title)
 		return m, tea.Batch(m.loadProjects, m.clearStatusAfter())
+
+	case processInboxLoadedMsg:
+		if len(msg.tasks) == 0 {
+			m.statusMsg = "Inbox is empty — nothing to process"
+			return m, m.clearStatusAfter()
+		}
+		m.processItems = msg.tasks
+		m.processIdx = 0
+		m.processStep = stepActionable
+		m.processTask = msg.tasks[0]
+		m.processStats = processStats{}
+		m.view = viewProcessInbox
+		m.currentList = model.ListIn
+		return m, nil
+
+	case processAdvancedMsg:
+		// Update stats.
+		switch msg.action {
+		case "trashed":
+			m.processStats.trashed++
+		case "someday":
+			m.processStats.someday++
+		case "done":
+			m.processStats.done++
+		case "waiting":
+			m.processStats.waiting++
+		case "refiled":
+			m.processStats.refiled++
+		case "toProject":
+			m.processStats.toProject++
+		case "skipped":
+			m.processStats.skipped++
+		}
+		m.advanceProcessInbox()
+		return m, nil
 
 	case clearStatusMsg:
 		m.statusMsg = ""
@@ -249,6 +345,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateProjectDetail(msg)
 			case viewTaskDetail:
 				return m.updateTaskDetail(msg)
+			case viewProcessInbox:
+				return m.updateProcessInbox(msg)
 			default:
 				return m.updateNormal(msg)
 			}
@@ -452,9 +550,30 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			_ = m.svc.TrashTask(m.list.Type, task.ID)
 			return m, m.loadCurrentList
 		}
+
+	// Process inbox (capital P) — guided GTD decision tree.
+	case "P":
+		if m.currentList != model.ListIn {
+			m.statusMsg = "Process inbox only available from the Inbox tab"
+			return m, m.clearStatusAfter()
+		}
+		if m.list != nil && len(m.list.Tasks) == 0 {
+			m.statusMsg = "Inbox is empty — nothing to process"
+			return m, m.clearStatusAfter()
+		}
+		return m, m.loadInboxForProcessing
 	}
 
 	return m, nil
+}
+
+// loadInboxForProcessing reads the inbox and returns a processInboxLoadedMsg to kick off process mode.
+func (m Model) loadInboxForProcessing() tea.Msg {
+	list, err := m.store.ReadList(model.ListIn)
+	if err != nil {
+		return errMsg{err}
+	}
+	return processInboxLoadedMsg{tasks: list.Tasks}
 }
 
 // refileTask moves a task from the current list to a destination list.
@@ -504,6 +623,338 @@ func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
 		}
 		return taskRefiledMsg{text}
 	}
+}
+
+// ── Process Inbox Mode ───────────────────────────────────────────────────────
+
+// advanceProcessInbox moves to the next item after an action completes.
+// If all items are processed it switches to the completion step.
+func (m *Model) advanceProcessInbox() {
+	m.processIdx++
+	if m.processIdx >= len(m.processItems) {
+		m.processStep = stepComplete
+		return
+	}
+	m.processStep = stepActionable
+	m.processTask = m.processItems[m.processIdx]
+	m.processTags = nil
+}
+
+// processRefileToNewProject refills the current process task into a freshly
+// created project. Called from the projectCreatedMsg handler when in process inbox view.
+func (m Model) processRefileToNewProject(filename string) tea.Cmd {
+	task := m.processTask
+	return func() tea.Msg {
+		// Persist any enrichment to the inbox first.
+		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+			return errMsg{err}
+		}
+		if err := m.svc.MoveToProject(model.ListIn, task.ID, filename, 0, model.StateNextAction); err != nil {
+			return errMsg{err}
+		}
+		return processAdvancedMsg{action: "toProject"}
+	}
+}
+
+// updateProcessInbox handles all keys while viewProcessInbox is active.
+// It dispatches by processStep, with shared mode handlers taking priority.
+func (m Model) updateProcessInbox(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch m.processStep {
+	case stepActionable:
+		return m.updateProcessStepActionable(msg)
+	case stepNotActionable:
+		return m.updateProcessStepNotActionable(msg)
+	case stepEnrich:
+		return m.updateProcessStepEnrich(msg)
+	case stepEnrichTags:
+		return m.updateProcessStepEnrichTags(msg)
+	case stepRoute:
+		return m.updateProcessStepRoute(msg)
+	case stepDelegatedTo:
+		return m.updateProcessStepDelegatedTo(msg)
+	case stepNewProject:
+		return m.updateProcessStepNewProject(msg)
+	case stepComplete:
+		// Any keypress returns to inbox.
+		m.view = viewList
+		m.currentList = model.ListIn
+		return m, m.loadCurrentList
+	}
+	return m, nil
+}
+
+func (m Model) updateProcessStepActionable(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.processRoute = routeActionable
+		m.processStep = stepEnrich
+	case "n":
+		m.processStep = stepNotActionable
+	case "s":
+		// Skip: leave item in inbox, advance.
+		m.processStats.skipped++
+		m.advanceProcessInbox()
+	case "q", "esc":
+		// Quit process inbox, return to inbox view.
+		m.view = viewList
+		m.currentList = model.ListIn
+		return m, m.loadCurrentList
+	}
+	return m, nil
+}
+
+func (m Model) updateProcessStepNotActionable(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "t":
+		// Trash immediately.
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.TrashTask(model.ListIn, task.ID); err != nil {
+				return errMsg{err}
+			}
+			return processAdvancedMsg{action: "trashed"}
+		}
+	case "m":
+		// Someday/maybe: go to enrich first with someday route.
+		m.processRoute = routeSomeday
+		m.processStep = stepEnrich
+	case "esc":
+		m.processStep = stepActionable
+	}
+	return m, nil
+}
+
+func (m Model) updateProcessStepEnrich(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "t":
+		// Edit task text.
+		m.mode = modeEditingField
+		m.detailField = fieldText
+		m.input.Reset()
+		m.input.Placeholder = "Task text"
+		m.input.SetValue(m.processTask.Text)
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "g":
+		// Add tags (one at a time).
+		// Seed processTags from the current task's tags so they display correctly.
+		m.processTags = append([]string(nil), m.processTask.Tags...)
+		m.processStep = stepEnrichTags
+		m.input.Reset()
+		m.input.Placeholder = "tag name"
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "d":
+		// Set deadline via date picker.
+		m.mode = modePickingDate
+		m.datePickerField = fieldDeadline
+		var initial time.Time
+		if m.processTask.Deadline != nil {
+			initial = *m.processTask.Deadline
+		}
+		cmd := m.datePicker.Open(initial)
+		return m, cmd
+
+	case "c":
+		// Set schedule via date picker.
+		m.mode = modePickingDate
+		m.datePickerField = fieldScheduled
+		var initial time.Time
+		if m.processTask.Scheduled != nil {
+			initial = *m.processTask.Scheduled
+		}
+		cmd := m.datePicker.Open(initial)
+		return m, cmd
+
+	case "n":
+		// Edit notes.
+		m.mode = modeEditingField
+		m.detailField = fieldNotes
+		m.input.Reset()
+		m.input.Placeholder = "Notes"
+		m.input.SetValue(m.processTask.Notes)
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "enter":
+		if m.processRoute == routeSomeday {
+			// Persist enrichment + refile as someday/maybe.
+			task := m.processTask
+			return m, func() tea.Msg {
+				if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+					return errMsg{err}
+				}
+				if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
+					return errMsg{err}
+				}
+				return processAdvancedMsg{action: "someday"}
+			}
+		}
+		// Actionable route: proceed to routing step.
+		m.processStep = stepRoute
+
+	case "esc":
+		if m.processRoute == routeSomeday {
+			m.processStep = stepNotActionable
+		} else {
+			m.processStep = stepActionable
+		}
+		// Revert working copy to original.
+		m.processTask = m.processItems[m.processIdx]
+	}
+	return m, nil
+}
+
+func (m Model) updateProcessStepEnrichTags(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "tab":
+		// Confirm current tag and clear input for the next one.
+		tag := strings.TrimSpace(m.input.Value())
+		if tag != "" {
+			m.processTags = append(m.processTags, tag)
+		}
+		m.input.Reset()
+		return m, m.input.Focus()
+
+	case "enter":
+		// Finish: flush any pending tag and merge into working copy.
+		tag := strings.TrimSpace(m.input.Value())
+		if tag != "" {
+			m.processTags = append(m.processTags, tag)
+		}
+		m.processTask.Tags = m.processTags
+		m.processStep = stepEnrich
+		m.mode = modeNormal
+
+	case "esc":
+		// Discard this tag session, return to enrich without changing tags.
+		m.processStep = stepEnrich
+		m.mode = modeNormal
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "d":
+		// Done (< 2 min, did it). Persist enrichment + mark done (auto-archives).
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+				return errMsg{err}
+			}
+			if err := m.svc.UpdateState(model.ListIn, task.ID, model.StateDone); err != nil {
+				return errMsg{err}
+			}
+			return processAdvancedMsg{action: "done"}
+		}
+
+	case "w":
+		// Waiting for: go to delegated_to input step.
+		m.processStep = stepDelegatedTo
+		m.input.Reset()
+		m.input.Placeholder = "Delegated to"
+		m.input.SetValue(m.processTask.DelegatedTo)
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "r":
+		// Refile to single actions.
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+				return errMsg{err}
+			}
+			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
+				return errMsg{err}
+			}
+			return processAdvancedMsg{action: "refiled"}
+		}
+
+	case "p":
+		// Pick an existing project.
+		m.refileTaskID = m.processTask.ID
+		m.refileTaskText = m.processTask.Text
+		m.refileFromList = model.ListIn
+		m.mode = modePickingProject
+		m.cursor = 0
+		return m, m.loadProjects
+
+	case "n":
+		// Create a new project: go to project title input step.
+		m.processStep = stepNewProject
+		m.input.Reset()
+		m.input.Placeholder = "Project title"
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "esc":
+		m.processStep = stepEnrich
+	}
+	return m, nil
+}
+
+func (m Model) updateProcessStepDelegatedTo(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		delegatee := strings.TrimSpace(m.input.Value())
+		m.processTask.DelegatedTo = delegatee
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+				return errMsg{err}
+			}
+			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateWaitingFor); err != nil {
+				return errMsg{err}
+			}
+			return processAdvancedMsg{action: "waiting"}
+		}
+
+	case "esc":
+		m.processStep = stepRoute
+		m.mode = modeNormal
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateProcessStepNewProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		title := strings.TrimSpace(m.input.Value())
+		if title == "" {
+			return m, nil
+		}
+		m.mode = modeNormal
+		// Persist enrichment before creating project + refiling.
+		task := m.processTask
+		return m, func() tea.Msg {
+			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+				return errMsg{err}
+			}
+			_, err := m.svc.CreateProject(title, "Tasks")
+			if err != nil {
+				return errMsg{err}
+			}
+			filename := store.Slugify(title) + ".md"
+			return projectCreatedMsg{title: title, filename: filename}
+		}
+
+	case "esc":
+		m.processStep = stepRoute
+		m.mode = modeNormal
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
 // updateProjectList handles keys when viewing the project list.
@@ -728,6 +1179,11 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.refileTaskID = ""
 		m.refileTaskText = ""
+		if m.view == viewProcessInbox {
+			// Return to the route step, not the list.
+			m.processStep = stepRoute
+			return m, nil
+		}
 		return m, m.loadCurrentList
 
 	case "j", "down":
@@ -744,12 +1200,42 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(m.projects) > 0 {
 			proj := m.projects[m.cursor]
 			m.mode = modeNormal
+			if m.view == viewProcessInbox {
+				// Persist enrichment then refile into the chosen project.
+				return m, m.processMoveToProject(proj.Filename, proj.Title)
+			}
 			// Move to first sub-group of selected project (index 0).
 			return m, m.moveToProject(proj.Filename, proj.Title)
 		}
 	}
 
 	return m, nil
+}
+
+// processMoveToProject persists enrichment edits then moves the current process
+// task into the first sub-group of the chosen project.
+func (m Model) processMoveToProject(filename, projTitle string) tea.Cmd {
+	task := m.processTask
+	return func() tea.Msg {
+		// Persist enrichment to inbox first.
+		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
+			return errMsg{err}
+		}
+		// Ensure the project has at least one sub-group.
+		proj, err := m.svc.GetProject(filename)
+		if err != nil {
+			return errMsg{err}
+		}
+		if len(proj.SubGroups) == 0 {
+			if _, err := m.svc.AddSubGroup(filename, "Tasks"); err != nil {
+				return errMsg{err}
+			}
+		}
+		if err := m.svc.MoveToProject(model.ListIn, task.ID, filename, 0, model.StateNextAction); err != nil {
+			return errMsg{err}
+		}
+		return processAdvancedMsg{action: "toProject"}
+	}
 }
 
 // updatePickingSubGroup handles keys when picking a destination sub-group.
@@ -833,7 +1319,8 @@ func (m Model) updateAddingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return errMsg{err}
 			}
-			return projectCreatedMsg{title}
+			filename := store.Slugify(title) + ".md"
+			return projectCreatedMsg{title: title, filename: filename}
 		}
 
 	case "esc":
@@ -997,6 +1484,8 @@ func (m Model) View() tea.View {
 		m.renderSubGroupPicker(&b)
 	case m.mode == modePickingDate:
 		m.renderDatePicker(&b)
+	case m.view == viewProcessInbox:
+		m.renderProcessInbox(&b)
 	case m.view == viewTaskDetail:
 		m.renderTaskDetailView(&b)
 	case m.view == viewProjects:
@@ -1454,12 +1943,22 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Check for a result.
 	if t, confirmed, cancelled := m.datePicker.Result(); confirmed {
-		// Write the picked time back into the working copy.
-		switch m.datePickerField {
-		case fieldDeadline:
-			m.detailTask.Deadline = &t
-		case fieldScheduled:
-			m.detailTask.Scheduled = &t
+		if m.view == viewProcessInbox {
+			// Write back into the process inbox working copy.
+			switch m.datePickerField {
+			case fieldDeadline:
+				m.processTask.Deadline = &t
+			case fieldScheduled:
+				m.processTask.Scheduled = &t
+			}
+		} else {
+			// Write the picked time back into the task detail working copy.
+			switch m.datePickerField {
+			case fieldDeadline:
+				m.detailTask.Deadline = &t
+			case fieldScheduled:
+				m.detailTask.Scheduled = &t
+			}
 		}
 		m.mode = modeNormal
 		return m, nil
@@ -1564,14 +2063,18 @@ func cycleState(s model.TaskState) model.TaskState {
 func (m Model) updateEditingField(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		// Commit the edit.
 		val := strings.TrimSpace(m.input.Value())
+		if m.view == viewProcessInbox {
+			// Apply the edit to the process working copy and return to enrich step.
+			m.applyProcessFieldEdit(val)
+			m.mode = modeNormal
+			return m, nil
+		}
 		m.applyFieldEdit(val)
 		m.mode = modeNormal
 		return m, nil
 
 	case "esc":
-		// Cancel the edit, revert to previous value.
 		m.mode = modeNormal
 		return m, nil
 	}
@@ -1631,6 +2134,20 @@ func (m *Model) applyFieldEdit(val string) {
 	}
 }
 
+// applyProcessFieldEdit writes an edited value back into processTask (the process inbox working copy).
+func (m *Model) applyProcessFieldEdit(val string) {
+	switch m.detailField {
+	case fieldText:
+		if val != "" {
+			m.processTask.Text = val
+		}
+	case fieldNotes:
+		m.processTask.Notes = val
+	case fieldDelegatedTo:
+		m.processTask.DelegatedTo = val
+	}
+}
+
 // parseDateTime attempts to parse a date/time string in several common formats.
 func parseDateTime(s string) *time.Time {
 	formats := []string{
@@ -1664,6 +2181,210 @@ func (m Model) saveDetailTask() tea.Cmd {
 			return errMsg{err}
 		}
 		return taskUpdatedMsg{task.Text}
+	}
+}
+
+// ── Process Inbox Rendering ──────────────────────────────────────────────────
+
+// renderProcessInbox renders the process inbox view, dispatching by step.
+// When a shared mode overlay is active (modeEditingField, modePickingDate,
+// modePickingProject) those renderers take priority via the View() switch, so
+// this function only runs in modeNormal.
+func (m Model) renderProcessInbox(b *strings.Builder) {
+	total := len(m.processItems)
+
+	// ── Completion screen ───────────────────────────────────────────────────
+	if m.processStep == stepComplete {
+		b.WriteString(projectTitleStyle.Render("Inbox Processed!"))
+		b.WriteString("\n\n")
+		b.WriteString(fmt.Sprintf("  %d items reviewed\n\n", total))
+		type row struct {
+			label string
+			n     int
+		}
+		rows := []row{
+			{"Trashed", m.processStats.trashed},
+			{"Someday/Maybe", m.processStats.someday},
+			{"Done (<2 min)", m.processStats.done},
+			{"Waiting For", m.processStats.waiting},
+			{"Single Actions", m.processStats.refiled},
+			{"To Projects", m.processStats.toProject},
+			{"Skipped", m.processStats.skipped},
+		}
+		for _, r := range rows {
+			b.WriteString(stateStyle.Render(fmt.Sprintf("  %-16s %d\n", r.label+":", r.n)))
+		}
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("  Press any key to return to inbox"))
+		b.WriteString("\n")
+		return
+	}
+
+	// ── Progress header ─────────────────────────────────────────────────────
+	current := m.processIdx + 1
+	header := fmt.Sprintf("Process Inbox  (%d of %d)", current, total)
+	b.WriteString(projectTitleStyle.Render(header))
+	b.WriteString("\n\n")
+
+	// ── Task preview (shown in actionable, not-actionable, enrich, route) ──
+	showTask := m.processStep == stepActionable ||
+		m.processStep == stepNotActionable ||
+		m.processStep == stepEnrich ||
+		m.processStep == stepRoute
+	if showTask {
+		m.renderProcessTaskPreview(b)
+		b.WriteString("\n")
+	}
+
+	// ── Step-specific prompt ────────────────────────────────────────────────
+	switch m.processStep {
+	case stepActionable:
+		b.WriteString(inputPromptStyle.Render("  Is it actionable?"))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(selectedTaskStyle.Render("[y]"))
+		b.WriteString(" yes    ")
+		b.WriteString(selectedTaskStyle.Render("[n]"))
+		b.WriteString(" no    ")
+		b.WriteString(selectedTaskStyle.Render("[s]"))
+		b.WriteString(" skip    ")
+		b.WriteString(stateStyle.Render("[q] quit"))
+		b.WriteString("\n")
+
+	case stepNotActionable:
+		b.WriteString(inputPromptStyle.Render("  Not actionable — what to do?"))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(selectedTaskStyle.Render("[t]"))
+		b.WriteString(" trash    ")
+		b.WriteString(selectedTaskStyle.Render("[m]"))
+		b.WriteString(" someday/maybe    ")
+		b.WriteString(stateStyle.Render("[esc] back"))
+		b.WriteString("\n")
+
+	case stepEnrich:
+		var routeLabel string
+		if m.processRoute == routeSomeday {
+			routeLabel = "  Enrich before filing as Someday/Maybe"
+		} else {
+			routeLabel = "  Enrich before routing"
+		}
+		b.WriteString(inputPromptStyle.Render(routeLabel))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(selectedTaskStyle.Render("[t]"))
+		b.WriteString(" edit text    ")
+		b.WriteString(selectedTaskStyle.Render("[g]"))
+		b.WriteString(" tags    ")
+		b.WriteString(selectedTaskStyle.Render("[d]"))
+		b.WriteString(" deadline    ")
+		b.WriteString(selectedTaskStyle.Render("[c]"))
+		b.WriteString(" schedule    ")
+		b.WriteString(selectedTaskStyle.Render("[n]"))
+		b.WriteString(" notes")
+		b.WriteString("\n  ")
+		b.WriteString(selectedTaskStyle.Render("[enter]"))
+		b.WriteString(" continue    ")
+		b.WriteString(stateStyle.Render("[esc] back"))
+		b.WriteString("\n")
+
+	case stepEnrichTags:
+		b.WriteString(inputPromptStyle.Render("  Add tags (tab to confirm each, enter when done)"))
+		b.WriteString("\n\n")
+		// Show accumulated tags so far.
+		if len(m.processTags) > 0 {
+			b.WriteString(stateStyle.Render("  Tags so far: "))
+			for i, tag := range m.processTags {
+				if i > 0 {
+					b.WriteString(stateStyle.Render(", "))
+				}
+				b.WriteString(tagStyle.Render(tag))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n  ")
+		b.WriteString(stateStyle.Render("Add tag: "))
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
+
+	case stepRoute:
+		b.WriteString(inputPromptStyle.Render("  Route this task:"))
+		b.WriteString("\n\n")
+		actions := []struct{ key, desc string }{
+			{"d", "done (<2 min, did it)"},
+			{"w", "waiting for (delegate)"},
+			{"r", "single actions"},
+			{"p", "add to project"},
+			{"n", "new project"},
+		}
+		for _, a := range actions {
+			b.WriteString("  ")
+			b.WriteString(selectedTaskStyle.Render("[" + a.key + "]"))
+			b.WriteString(" " + a.desc + "\n")
+		}
+		b.WriteString("  ")
+		b.WriteString(stateStyle.Render("[esc] back"))
+		b.WriteString("\n")
+
+	case stepDelegatedTo:
+		b.WriteString(inputPromptStyle.Render("  Delegated to:"))
+		b.WriteString("\n\n  ")
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
+
+	case stepNewProject:
+		b.WriteString(inputPromptStyle.Render("  New project title:"))
+		b.WriteString("\n\n  ")
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
+	}
+}
+
+// renderProcessTaskPreview renders the current task's text and enriched attributes.
+func (m Model) renderProcessTaskPreview(b *strings.Builder) {
+	task := m.processTask
+
+	// Task text.
+	b.WriteString(selectedTaskStyle.Render("  "+task.Text) + "\n")
+
+	// Tags.
+	if len(task.Tags) > 0 {
+		b.WriteString(stateStyle.Render("  Tags:      "))
+		for i, tag := range task.Tags {
+			if i > 0 {
+				b.WriteString(stateStyle.Render(", "))
+			}
+			b.WriteString(tagStyle.Render(tag))
+		}
+		b.WriteString("\n")
+	}
+
+	// Deadline.
+	if task.Deadline != nil {
+		b.WriteString(stateStyle.Render("  Deadline:  "))
+		b.WriteString(deadlineStyle.Render(task.Deadline.Format("2006-01-02 15:04")))
+		b.WriteString("\n")
+	}
+
+	// Scheduled.
+	if task.Scheduled != nil {
+		b.WriteString(stateStyle.Render("  Scheduled: "))
+		b.WriteString(deadlineStyle.Render(task.Scheduled.Format("2006-01-02 15:04")))
+		b.WriteString("\n")
+	}
+
+	// Notes (first line only, truncated).
+	if task.Notes != "" {
+		preview := task.Notes
+		if idx := strings.IndexByte(preview, '\n'); idx >= 0 {
+			preview = preview[:idx]
+		}
+		if len(preview) > 60 {
+			preview = preview[:57] + "..."
+		}
+		b.WriteString(stateStyle.Render("  Notes:     "))
+		b.WriteString(helpStyle.Render(preview))
+		b.WriteString("\n")
 	}
 }
 
@@ -1703,6 +2424,17 @@ func (m Model) renderTabBar() string {
 		tabs[2] = inactiveTabStyle.Render(projectsLabel)
 	}
 
+	// In process inbox mode, highlight the inbox tab with a special label.
+	if m.view == viewProcessInbox {
+		label := fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
+		if m.processStep == stepComplete {
+			label = " Inbox Processed! "
+		}
+		tabs[0] = activeTabStyle.Render(label)
+		tabs[1] = inactiveTabStyle.Render(actionsLabel)
+		tabs[2] = inactiveTabStyle.Render(projectsLabel)
+	}
+
 	return tabs[0] + "  " + tabs[1] + "  " + tabs[2]
 }
 
@@ -1723,6 +2455,29 @@ func (m Model) helpText() string {
 		}
 		return "j/k: navigate fields  e/enter: edit  space: cycle state  s: save & back  esc: back (discard)"
 	}
+	if m.view == viewProcessInbox {
+		if m.mode == modeEditingField {
+			return "enter: save  esc: cancel"
+		}
+		switch m.processStep {
+		case stepActionable:
+			return "y: actionable  n: not actionable  s: skip  q: quit"
+		case stepNotActionable:
+			return "t: trash  m: someday/maybe  esc: back"
+		case stepEnrich:
+			return "t: text  g: tags  d: deadline  c: schedule  n: notes  enter: continue  esc: back"
+		case stepEnrichTags:
+			return "tab: add tag  enter: done  esc: cancel"
+		case stepRoute:
+			return "d: done  w: waiting  r: single actions  p: project  n: new project  esc: back"
+		case stepDelegatedTo:
+			return "enter: confirm  esc: back"
+		case stepNewProject:
+			return "enter: create & refile  esc: back"
+		case stepComplete:
+			return "any key: return to inbox"
+		}
+	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
 
@@ -1733,7 +2488,7 @@ func (m Model) helpText() string {
 		return "enter: detail  a: add task  n: new sub-group  d: done  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
-			return "enter: detail  a: add  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
+			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 		}
 		return "enter: detail  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 	}
