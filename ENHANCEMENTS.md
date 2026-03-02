@@ -24,6 +24,7 @@
 - Review default keybindings and see if there are inconsistencies and ways I can improve with better, more consistent mnemonics
 - Add setting keybindings by config.toml (set defaults in the file?)
 - Improve UX generally with more fun injected :)
+- **Explore replacing tabs with views (Option C)**: the current 4-tab system (Inbox / Actions / Projects / Views) could eventually be replaced with a fully view-based navigation where the three lists are default saved views and the "tab" concept goes away. Worth exploring in a future session once Views are battle-tested.
 
 # Config file
 - Update where text files are stored (set the directory)

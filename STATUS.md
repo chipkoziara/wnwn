@@ -1,6 +1,6 @@
 # G-Tuddy Project Status
 
-Last updated: 2026-03-01 (session 3)
+Last updated: 2026-03-02 (session 4)
 
 ## What This Is
 
@@ -8,8 +8,9 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 31 tests passing)
-- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup types with full GTD attributes (state, deadline, scheduled, tags, delegated_to, waiting_since, etc.). Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
+### Data Layer (fully working, 35 tests passing)
+- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
+- **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
 - **ULID generation** (`internal/id/`): Task IDs using oklog/ulid.
@@ -19,8 +20,9 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - State transitions: auto-sets waiting_since, auto-archives done/canceled
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
-  - Archiving: monthly archive files with source tracking
-  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields, handle archive-on-done/canceled, auto-set waiting_since
+	- Archiving: monthly archive files with source tracking
+	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields, handle archive-on-done/canceled, auto-set waiting_since
+	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
 
 ### CLI (`cmd/gtd/main.go`)
 - `gtd` (no args): launches TUI
@@ -82,6 +84,23 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Project list view:**
 - `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
+
+**Views tab** (`4` or `V` from anywhere, or tab from Projects):
+- Lists the 5 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week)
+- `enter`: open a view — collects all tasks and filters via the query DSL
+- `/`: ad-hoc query input — type any DSL query, enter to run
+- `j`/`k`/`g`/`G`: navigate the view list
+- `esc`: return to Inbox
+
+**View results** (after opening any view):
+- Shows filtered tasks from all sources (inbox, single-actions, all projects) with muted source badge `[inbox]`, `[actions]`, `[project-name]`
+- Header shows view name and query string
+- `j`/`k`/`g`/`G`: navigate results
+- `enter`: open task detail (full edit; esc/save returns to view results and refreshes)
+- `d`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
+- `x`: trash (list tasks) or cancel (project tasks); view refreshes
+- `R`: manual refresh (re-collect and re-filter)
+- `esc`: back to view list
 
 **Project edit view** (`viewProjectEdit`, opened with `E` from project list or detail):
 - Navigable field list: title, state, tags, deadline, URL, definition of done
@@ -158,7 +177,7 @@ Prioritized by impact:
 
 ### Power Features
 
-9. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
+9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml is still deferred (see item 12 below).
 10. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
 11. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
 12. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
@@ -186,6 +205,19 @@ Built and shipped in session 3. Key design decisions:
 - **`projectEditLoadedMsg`** — carries the loaded project + originating view. Follows the same message-passing pattern as `projectDetailMsg`.
 - **`projectUpdatedMsg`** — carries the new filename. On receipt, if the originating view was project detail, reloads that view with the (possibly renamed) file; otherwise returns to project list.
 
+
+## Shipped: Views / Query DSL / Filtering
+
+Built and shipped in session 4. Key design decisions:
+
+- **`internal/query` package** — standalone DSL parser and matcher with no I/O dependency. `Parse(input, now)` returns `[]Clause`; `MatchAll(clauses, task, source)` evaluates them. The `source` parameter is the provenance string (`"in"`, `"single-actions"`, `"projects/<filename>"`) used by the `project:` clause.
+- **Relative date tokens** — `today`, `tomorrow`, `Nd` (e.g. `7d`) are resolved to midnight local time at query execution time. This makes the "Overdue" and "Due This Week" default views work correctly every day without user intervention.
+- **`CollectAllTasks()`** — stateless read of all active sources. Returns `[]ViewTask` with `Source`, `SgIdx`, `Filename`, `ListType`, `IsProject` so callers can route mutations back to the correct service method.
+- **`viewViews` / `viewViewResults`** — two new view states added to the existing `viewState` enum. `viewViews` renders the saved view list; `viewViewResults` renders filtered results. Both share the existing tab bar (extended to 4 tabs) and key routing infrastructure.
+- **Source-aware state changes** — `d`/`s`/`w`/`x` in view results call `UpdateProjectTaskState` (for project tasks) or `UpdateState`/`TrashTask` (for list tasks) based on `ViewTask.IsProject`. After any mutation the query is re-run to refresh the results in-place.
+- **Task detail routing** — opening task detail from view results sets `detailFromView = viewViewResults`. On save (`saveDetailTask`), the function returns a `viewResultsLoadedMsg` (re-collect + re-filter) instead of `taskUpdatedMsg`, so the view refreshes automatically. On esc (discard), `updateTaskDetail` detects `viewViewResults` and re-runs the query.
+- **Ad-hoc queries** — `/` from the view list activates `modeEditingField` within `viewViews`. The `updateViewList` handler forwards key events to the text input and on `enter` calls `runQuery("Ad-hoc", queryStr)`.
+- **Hardcoded default views** — `model.DefaultViews()` returns the 5 built-in views. No config file yet; user-defined saved views deferred to the config file session.
 
 ## Architecture Notes
 

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/g-tuddy/g-tuddy/internal/model"
+	"github.com/g-tuddy/g-tuddy/internal/query"
 	"github.com/g-tuddy/g-tuddy/internal/service"
 	"github.com/g-tuddy/g-tuddy/internal/store"
 	"github.com/g-tuddy/g-tuddy/internal/tui/datepicker"
@@ -40,6 +41,8 @@ const (
 	viewTaskDetail                     // viewing/editing a single task's attributes
 	viewProcessInbox                   // guided GTD decision tree for processing inbox items
 	viewProjectEdit                    // editing project-level metadata (title, state, tags, etc.)
+	viewViews                          // saved view list (4th tab)
+	viewViewResults                    // filtered task results for the active or ad-hoc view
 )
 
 // projEditField enumerates the editable fields in the project edit view.
@@ -159,6 +162,14 @@ type Model struct {
 	projEditField    projEditField // which field is currently selected
 	projEditFromView viewState     // view to return to on esc/save
 
+	// Views state.
+	savedViews      []model.SavedView  // list of saved views (hardcoded defaults)
+	viewListCursor  int                // cursor in the saved view list
+	activeViewName  string             // name of the currently open view (or "Ad-hoc")
+	activeViewQuery string             // the query string for the active view
+	viewResults     []service.ViewTask // filtered tasks for the active view
+	viewCursor      int                // cursor within view results
+
 	// Process inbox state.
 	processItems []model.Task // snapshot of inbox tasks taken at activation
 	processIdx   int          // index of the current item being processed (0-based)
@@ -184,6 +195,7 @@ func New(dataDir string) Model {
 		currentList: model.ListIn,
 		input:       ti,
 		datePicker:  datepicker.New(),
+		savedViews:  model.DefaultViews(),
 	}
 }
 
@@ -220,6 +232,15 @@ type projectCreatedMsg struct {
 	title    string
 	filename string // slug filename of the created project
 }
+
+// viewResultsLoadedMsg carries the results of a CollectAllTasks+filter operation.
+type viewResultsLoadedMsg struct {
+	name     string
+	queryStr string
+	results  []service.ViewTask
+	err      error
+}
+
 type projectUpdatedMsg struct {
 	title       string
 	newFilename string
@@ -278,6 +299,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload = m.loadCurrentList
 		} else if m.detailFromView == viewProjectDetail && m.activeFilename != "" {
 			reload = m.reloadProjectDetail()
+		} else if m.detailFromView == viewViewResults {
+			// saveDetailTask returns viewResultsLoadedMsg for this case,
+			// so we should not reach here normally; fall back to viewViews.
+			m.view = viewViews
 		}
 		return m, tea.Batch(reload, m.clearStatusAfter())
 
@@ -302,6 +327,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = fmt.Sprintf("Created project: %s", msg.title)
 		return m, tea.Batch(m.loadProjects, m.clearStatusAfter())
+
+	case viewResultsLoadedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
+			return m, m.clearStatusAfter()
+		}
+		m.activeViewName = msg.name
+		m.activeViewQuery = msg.queryStr
+		m.viewResults = msg.results
+		m.viewCursor = 0
+		m.view = viewViewResults
+		return m, nil
 
 	case projectEditLoadedMsg:
 		m.projEditProject = msg.project
@@ -400,6 +437,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateProcessInbox(msg)
 			case viewProjectEdit:
 				return m.updateProjectEdit(msg)
+			case viewViews:
+				return m.updateViewList(msg)
+			case viewViewResults:
+				return m.updateViewResults(msg)
 			default:
 				return m.updateNormal(msg)
 			}
@@ -510,6 +551,11 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 		return m, m.loadProjects
 
+	case "4", "V":
+		m.view = viewViews
+		m.viewListCursor = 0
+		return m, nil
+
 	case "tab":
 		switch {
 		case m.view == viewList && m.currentList == model.ListIn:
@@ -520,6 +566,10 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.view = viewProjects
 			m.cursor = 0
 			return m, m.loadProjects
+		case m.view == viewProjects:
+			m.view = viewViews
+			m.viewListCursor = 0
+			return m, nil
 		default:
 			m.view = viewList
 			m.currentList = model.ListIn
@@ -1059,11 +1109,15 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "3":
 		// Already here.
 
+	case "4", "V":
+		m.view = viewViews
+		m.viewListCursor = 0
+		return m, nil
+
 	case "tab":
-		m.view = viewList
-		m.currentList = model.ListIn
-		m.cursor = 0
-		return m, m.loadCurrentList
+		m.view = viewViews
+		m.viewListCursor = 0
+		return m, nil
 	}
 
 	return m, nil
@@ -1217,6 +1271,11 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.view = viewProjects
 		m.cursor = 0
 		return m, m.loadProjects
+
+	case "4", "V":
+		m.view = viewViews
+		m.viewListCursor = 0
+		return m, nil
 
 	case "tab":
 		m.view = viewList
@@ -1546,6 +1605,10 @@ func (m Model) View() tea.View {
 		m.renderTaskDetailView(&b)
 	case m.view == viewProjectEdit:
 		m.renderProjectEditView(&b)
+	case m.view == viewViews:
+		m.renderViewList(&b)
+	case m.view == viewViewResults:
+		m.renderViewResults(&b)
 	case m.view == viewProjects:
 		m.renderProjectListView(&b)
 	case m.view == viewProjectDetail:
@@ -2053,6 +2116,11 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.detailFromView == viewList {
 			m.currentList = m.detailFromList
 		}
+		if m.detailFromView == viewViewResults {
+			// Re-run the query so the list reflects any ad-hoc changes
+			// the user may have made before discarding.
+			return m, m.runQuery(m.activeViewName, m.activeViewQuery)
+		}
 		return m, nil
 
 	case "j", "down":
@@ -2259,6 +2327,9 @@ func (m Model) saveDetailTask() tea.Cmd {
 	filename := m.activeFilename
 	sgIdx := m.detailFromSgIdx
 	listType := m.detailFromList
+	fromView := m.detailFromView
+	viewName := m.activeViewName
+	viewQueryStr := m.activeViewQuery
 	return func() tea.Msg {
 		var err error
 		if isProject {
@@ -2268,6 +2339,21 @@ func (m Model) saveDetailTask() tea.Cmd {
 		}
 		if err != nil {
 			return errMsg{err}
+		}
+		// If we came from a view results screen, refresh the view after saving.
+		if fromView == viewViewResults {
+			clauses, _ := query.Parse(viewQueryStr, time.Now())
+			all, err2 := m.svc.CollectAllTasks()
+			if err2 != nil {
+				return taskUpdatedMsg{task.Text}
+			}
+			var filtered []service.ViewTask
+			for _, v := range all {
+				if query.MatchAll(clauses, v.Task, v.Source) {
+					filtered = append(filtered, v)
+				}
+			}
+			return viewResultsLoadedMsg{name: viewName, queryStr: viewQueryStr, results: filtered}
 		}
 		return taskUpdatedMsg{task.Text}
 	}
@@ -2534,9 +2620,9 @@ func (m Model) renderTabBar() string {
 	inboxLabel := " 1 Inbox "
 	actionsLabel := " 2 Actions "
 	projectsLabel := " 3 Projects "
+	viewsLabel := " 4 Views "
 
-	// Build each tab with optional count.
-	var tabs [3]string
+	var tabs [4]string
 
 	if m.view == viewList && m.currentList == model.ListIn {
 		count := 0
@@ -2565,6 +2651,12 @@ func (m Model) renderTabBar() string {
 		tabs[2] = inactiveTabStyle.Render(projectsLabel)
 	}
 
+	if m.view == viewViews || m.view == viewViewResults {
+		tabs[3] = activeTabStyle.Render(viewsLabel)
+	} else {
+		tabs[3] = inactiveTabStyle.Render(viewsLabel)
+	}
+
 	// In process inbox mode, highlight the inbox tab with a special label.
 	if m.view == viewProcessInbox {
 		label := fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
@@ -2574,9 +2666,10 @@ func (m Model) renderTabBar() string {
 		tabs[0] = activeTabStyle.Render(label)
 		tabs[1] = inactiveTabStyle.Render(actionsLabel)
 		tabs[2] = inactiveTabStyle.Render(projectsLabel)
+		tabs[3] = inactiveTabStyle.Render(viewsLabel)
 	}
 
-	return tabs[0] + "  " + tabs[1] + "  " + tabs[2]
+	return tabs[0] + "  " + tabs[1] + "  " + tabs[2] + "  " + tabs[3]
 }
 
 // helpText returns contextual help based on mode and current view.
@@ -2625,6 +2718,16 @@ func (m Model) helpText() string {
 			return "enter: save field  esc: cancel edit"
 		}
 		return "j/k: navigate fields  e/enter: edit  space: cycle state  s: save & back  esc: back (discard)"
+	}
+
+	if m.view == viewViews {
+		if m.mode == modeEditingField {
+			return "enter: run query  esc: cancel"
+		}
+		return "enter: open view  /: ad-hoc query  j/k: navigate  1-4/tab: switch tab  q: quit"
+	}
+	if m.view == viewViewResults {
+		return "enter: task detail  d: done  s: someday  w: waiting  x: trash  R: refresh  esc: back  j/k: navigate"
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -2919,6 +3022,413 @@ func (m Model) renderProjectEditView(b *strings.Builder) {
 	b.WriteString("\n")
 }
 
+// ── Views ─────────────────────────────────────────────────────────────────
+
+// runQuery collects all tasks and filters them using the given DSL query string.
+// Returns a viewResultsLoadedMsg — intended to be returned as a tea.Cmd.
+func (m Model) runQuery(name, queryStr string) tea.Cmd {
+	return func() tea.Msg {
+		clauses, err := query.Parse(queryStr, time.Now())
+		if err != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+		}
+		all, err := m.svc.CollectAllTasks()
+		if err != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+		}
+		var filtered []service.ViewTask
+		for _, vt := range all {
+			if query.MatchAll(clauses, vt.Task, vt.Source) {
+				filtered = append(filtered, vt)
+			}
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+	}
+}
+
+// updateViewList handles keys in the saved view list screen.
+func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	case "j", "down":
+		if m.viewListCursor < len(m.savedViews)-1 {
+			m.viewListCursor++
+		}
+
+	case "k", "up":
+		if m.viewListCursor > 0 {
+			m.viewListCursor--
+		}
+
+	case "g":
+		m.viewListCursor = 0
+
+	case "G":
+		if len(m.savedViews) > 0 {
+			m.viewListCursor = len(m.savedViews) - 1
+		}
+
+	case "enter":
+		if len(m.savedViews) > 0 {
+			sv := m.savedViews[m.viewListCursor]
+			return m, m.runQuery(sv.Name, sv.Query)
+		}
+
+	case "/":
+		// Ad-hoc query: open inline text input.
+		m.mode = modeEditingField
+		m.input.Reset()
+		m.input.Placeholder = "type a query, e.g. state:waiting-for tag:@home"
+		m.input.SetValue("")
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "1":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	case "2":
+		m.view = viewList
+		m.currentList = model.ListSingleActions
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	case "3":
+		m.view = viewProjects
+		m.cursor = 0
+		return m, m.loadProjects
+
+	case "4", "V":
+		// Already here.
+
+	case "tab":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+	}
+
+	// Ad-hoc query input: when modeEditingField is active in viewViews,
+	// forward to the shared editing handler except for enter (run query).
+	if m.mode == modeEditingField {
+		switch msg.String() {
+		case "enter":
+			queryStr := strings.TrimSpace(m.input.Value())
+			m.mode = modeNormal
+			if queryStr == "" {
+				return m, nil
+			}
+			return m, m.runQuery("Ad-hoc", queryStr)
+		case "esc":
+			m.mode = modeNormal
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+	}
+
+	return m, nil
+}
+
+// updateViewResults handles keys in the view results screen.
+func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		m.view = viewViews
+		return m, nil
+
+	case "j", "down":
+		if m.viewCursor < len(m.viewResults)-1 {
+			m.viewCursor++
+		}
+
+	case "k", "up":
+		if m.viewCursor > 0 {
+			m.viewCursor--
+		}
+
+	case "g":
+		m.viewCursor = 0
+
+	case "G":
+		if len(m.viewResults) > 0 {
+			m.viewCursor = len(m.viewResults) - 1
+		}
+
+	case "enter":
+		if len(m.viewResults) == 0 {
+			return m, nil
+		}
+		vt := m.viewResults[m.viewCursor]
+		m.detailTask = vt.Task
+		m.detailField = fieldText
+		m.detailFromView = viewViewResults
+		m.detailIsProject = vt.IsProject
+		if vt.IsProject {
+			m.activeFilename = vt.Filename
+			m.detailFromSgIdx = vt.SgIdx
+		} else {
+			m.detailFromList = vt.ListType
+		}
+		m.view = viewTaskDetail
+		return m, nil
+
+	case "R":
+		// Refresh: re-run the current query.
+		return m, m.runQuery(m.activeViewName, m.activeViewQuery)
+
+	case "d":
+		return m, m.viewResultStateChange(model.StateDone)
+
+	case "s":
+		return m, m.viewResultStateChange(model.StateSomeday)
+
+	case "w":
+		return m, m.viewResultStateChange(model.StateWaitingFor)
+
+	case "x":
+		return m, m.viewResultTrash()
+
+	case "1":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	case "2":
+		m.view = viewList
+		m.currentList = model.ListSingleActions
+		m.cursor = 0
+		return m, m.loadCurrentList
+
+	case "3":
+		m.view = viewProjects
+		m.cursor = 0
+		return m, m.loadProjects
+
+	case "4", "V":
+		m.view = viewViews
+		return m, nil
+
+	case "tab":
+		m.view = viewViews
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// viewResultStateChange applies a state change to the selected view result task
+// and re-runs the query to refresh.
+func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
+	if len(m.viewResults) == 0 {
+		return nil
+	}
+	vt := m.viewResults[m.viewCursor]
+	name := m.activeViewName
+	queryStr := m.activeViewQuery
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, newState)
+		} else {
+			err = m.svc.UpdateState(vt.ListType, vt.Task.ID, newState)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		// Re-collect and re-filter.
+		clauses, _ := query.Parse(queryStr, time.Now())
+		all, err := m.svc.CollectAllTasks()
+		if err != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+		}
+		var filtered []service.ViewTask
+		for _, v := range all {
+			if query.MatchAll(clauses, v.Task, v.Source) {
+				filtered = append(filtered, v)
+			}
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+	}
+}
+
+// viewResultTrash permanently removes the selected view result task.
+func (m Model) viewResultTrash() tea.Cmd {
+	if len(m.viewResults) == 0 {
+		return nil
+	}
+	vt := m.viewResults[m.viewCursor]
+	name := m.activeViewName
+	queryStr := m.activeViewQuery
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			// No TrashProjectTask method yet — use UpdateProjectTaskState to canceled.
+			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, model.StateCanceled)
+		} else {
+			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		clauses, _ := query.Parse(queryStr, time.Now())
+		all, err2 := m.svc.CollectAllTasks()
+		if err2 != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err2}
+		}
+		var filtered []service.ViewTask
+		for _, v := range all {
+			if query.MatchAll(clauses, v.Task, v.Source) {
+				filtered = append(filtered, v)
+			}
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+	}
+}
+
+// sourceBadge returns a short muted badge string for the source of a view task.
+func sourceBadge(source string) string {
+	switch source {
+	case "in":
+		return "[inbox]"
+	case "single-actions":
+		return "[actions]"
+	}
+	// projects/launch-website.md → [launch-website]
+	if after, ok := strings.CutPrefix(source, "projects/"); ok {
+		name := strings.TrimSuffix(after, ".md")
+		if len(name) > 18 {
+			name = name[:15] + "..."
+		}
+		return "[" + name + "]"
+	}
+	return "[" + source + "]"
+}
+
+// renderViewList renders the saved view list screen.
+func (m Model) renderViewList(b *strings.Builder) {
+	b.WriteString(projectTitleStyle.Render("Views"))
+	b.WriteString("\n\n")
+
+	if len(m.savedViews) == 0 {
+		b.WriteString(taskStyle.Render("No views defined."))
+		b.WriteString("\n")
+		return
+	}
+
+	for i, sv := range m.savedViews {
+		isSelected := i == m.viewListCursor
+
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+		} else {
+			b.WriteString("   ")
+		}
+
+		if isSelected {
+			b.WriteString(selectedTaskStyle.Render(sv.Name))
+		} else {
+			b.WriteString(sv.Name)
+		}
+		b.WriteString("  ")
+		b.WriteString(helpStyle.Render(sv.Query))
+		b.WriteString("\n")
+	}
+
+	// Ad-hoc query input when active.
+	if m.mode == modeEditingField {
+		b.WriteString("\n")
+		b.WriteString(inputPromptStyle.Render("  Query: "))
+		b.WriteString(m.input.View())
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
+		b.WriteString(helpStyle.Render("  /: ad-hoc query"))
+		b.WriteString("\n")
+	}
+}
+
+// renderViewResults renders the filtered task list for an open view.
+func (m Model) renderViewResults(b *strings.Builder) {
+	// Header: view name + query.
+	header := m.activeViewName
+	b.WriteString(projectTitleStyle.Render(header))
+	if m.activeViewQuery != "" {
+		b.WriteString("  ")
+		b.WriteString(helpStyle.Render(m.activeViewQuery))
+	}
+	b.WriteString("\n\n")
+
+	if len(m.viewResults) == 0 {
+		b.WriteString(taskStyle.Render("No tasks match this query."))
+		b.WriteString("\n")
+		return
+	}
+
+	for i, vt := range m.viewResults {
+		isSelected := i == m.viewCursor
+		task := vt.Task
+
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+		} else {
+			b.WriteString("   ")
+		}
+
+		// Checkbox + text.
+		checkbox := model.CheckboxFor(task.State)
+		switch checkbox {
+		case model.CheckboxDone:
+			b.WriteString(checkboxDoneStyle.Render(fmt.Sprintf("[x] %s", task.Text)))
+		case model.CheckboxCanceled:
+			b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", task.Text)))
+		default:
+			if isSelected {
+				b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", task.Text)))
+			} else {
+				b.WriteString(checkboxOpenStyle.Render("[ ] "))
+				b.WriteString(task.Text)
+			}
+		}
+
+		// Inline metadata: state, deadline, tags, source badge.
+		var meta []string
+		if task.State != model.StateEmpty && task.State != model.StateDone && task.State != model.StateCanceled {
+			meta = append(meta, stateStyle.Render(string(task.State)))
+		}
+		if task.Deadline != nil {
+			meta = append(meta, deadlineStyle.Render("due:"+task.Deadline.Format("2006-01-02")))
+		}
+		for _, tag := range task.Tags {
+			meta = append(meta, tagStyle.Render(tag))
+		}
+		// Muted source badge.
+		meta = append(meta, helpStyle.Render(sourceBadge(vt.Source)))
+
+		if len(meta) > 0 {
+			b.WriteString("  ")
+			b.WriteString(strings.Join(meta, " "))
+		}
+		b.WriteString("\n")
+	}
+}
+
 // clampCursor ensures the cursor is within bounds for the current view.
 func (m *Model) clampCursor() {
 	var max int
@@ -2927,6 +3437,10 @@ func (m *Model) clampCursor() {
 		max = len(m.projects)
 	case viewProjectDetail:
 		max = len(m.flattenProject())
+	case viewViews:
+		max = len(m.savedViews)
+	case viewViewResults:
+		max = len(m.viewResults)
 	default:
 		if m.list == nil {
 			max = 0
