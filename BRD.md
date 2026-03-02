@@ -347,6 +347,10 @@ We are building a cross-platform TUI (prioritize Mac/Linux) using [Bubbletea v2]
 
 Note: Bubbletea v2 uses `charm.land/*` import paths (not `github.com/charmbracelet/*`). The v2 API has breaking changes: `View()` returns `tea.View` (not string), key messages are `tea.KeyPressMsg` (not `tea.KeyMsg`). No third-party form/wizard library compatible with v2 exists yet — interactive flows (process inbox, weekly review) are implemented directly using Bubbletea state machines.
 
+**Potential future additions (pending v2 compatibility):**
+- **[Huh](https://github.com/charmbracelet/huh)** — form and wizard framework; would simplify task creation flows and the weekly review guided steps if a v2-compatible release ships
+- **[Glamour](https://github.com/charmbracelet/glamour)** — terminal Markdown rendering; would enable rich display of task notes inline rather than plain text
+
 ## 6. Configuration
 
 Users should be able to edit configuration via an app-specific `~/.config/gtd/config.toml` file.
