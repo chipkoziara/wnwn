@@ -65,6 +65,9 @@ func WriteProject(w io.Writer, proj *model.Project) error {
 	if proj.URL != "" {
 		fmt.Fprintf(w, "url: %s\n", proj.URL)
 	}
+	if proj.WaitingOn != "" {
+		fmt.Fprintf(w, "waiting_on: %s\n", proj.WaitingOn)
+	}
 	if proj.DefinitionOfDone != "" {
 		fmt.Fprintf(w, "definition_of_done: %s\n", proj.DefinitionOfDone)
 	}
@@ -127,8 +130,8 @@ func writeTask(w io.Writer, task *model.Task) {
 	if len(task.Tags) > 0 {
 		fmt.Fprintf(w, "  tags: [%s]\n", joinQuotedTags(task.Tags))
 	}
-	if task.DelegatedTo != "" {
-		fmt.Fprintf(w, "  delegated_to: %s\n", task.DelegatedTo)
+	if task.WaitingOn != "" {
+		fmt.Fprintf(w, "  waiting_on: %s\n", task.WaitingOn)
 	}
 	if task.WaitingSince != nil {
 		fmt.Fprintf(w, "  waiting_since: %s\n", task.WaitingSince.Format(dateFormat))

@@ -58,7 +58,7 @@ type Task struct {
 	// Optional metadata
 	URL          string     `yaml:"url,omitempty"`
 	Tags         []string   `yaml:"tags,omitempty"`
-	DelegatedTo  string     `yaml:"delegated_to,omitempty"`
+	WaitingOn    string     `yaml:"waiting_on,omitempty"`
 	WaitingSince *time.Time `yaml:"waiting_since,omitempty"`
 
 	// Source is set when a task is archived, recording where it came from.

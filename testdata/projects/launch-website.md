@@ -28,7 +28,7 @@ deadline: 2026-04-01T00:00
   id: 01JNQXNS0YZAB2CDE3FGHI6JKL
   created: 2026-03-01T10:05
   state: waiting-for
-  delegated_to: Design Team
+  waiting_on: Design Team
   waiting_since: 2026-03-01
   ```
 
@@ -73,7 +73,7 @@ deadline: 2026-06-01T00:00
   id: 01JNQXUY6EFGH8IJK9LMNO2PQR
   created: 2026-02-25T15:00
   state: waiting-for
-  delegated_to: Sarah
+  waiting_on: Sarah
   waiting_since: 2026-02-25
   tags: ["@office"]
   ```

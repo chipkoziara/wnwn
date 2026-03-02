@@ -61,21 +61,21 @@ type rawTaskYAML struct {
 	Deadline     string   `yaml:"deadline"`
 	URL          string   `yaml:"url"`
 	Tags         []string `yaml:"tags"`
-	DelegatedTo  string   `yaml:"delegated_to"`
+	WaitingOn    string   `yaml:"waiting_on"`
 	WaitingSince string   `yaml:"waiting_since"`
 	Source       string   `yaml:"source"`
 }
 
 func rawToTask(raw rawTaskYAML, text string, notes string) (model.Task, error) {
 	t := model.Task{
-		ID:          raw.ID,
-		Text:        text,
-		State:       model.TaskState(raw.State),
-		URL:         raw.URL,
-		Tags:        raw.Tags,
-		DelegatedTo: raw.DelegatedTo,
-		Source:      raw.Source,
-		Notes:       notes,
+		ID:        raw.ID,
+		Text:      text,
+		State:     model.TaskState(raw.State),
+		URL:       raw.URL,
+		Tags:      raw.Tags,
+		WaitingOn: raw.WaitingOn,
+		Source:    raw.Source,
+		Notes:     notes,
 	}
 
 	if raw.Created != "" {
@@ -322,6 +322,7 @@ func ParseProject(r io.Reader) (*model.Project, error) {
 			Deadline         string   `yaml:"deadline"`
 			Tags             []string `yaml:"tags"`
 			URL              string   `yaml:"url"`
+			WaitingOn        string   `yaml:"waiting_on"`
 			DefinitionOfDone string   `yaml:"definition_of_done"`
 		}
 		if err := yaml.Unmarshal([]byte(fmStr), &raw); err != nil {
@@ -332,6 +333,7 @@ func ParseProject(r io.Reader) (*model.Project, error) {
 		proj.State = model.TaskState(raw.State)
 		proj.Tags = raw.Tags
 		proj.URL = raw.URL
+		proj.WaitingOn = raw.WaitingOn
 		proj.DefinitionOfDone = raw.DefinitionOfDone
 		if raw.Deadline != "" {
 			t, err := parseTime(raw.Deadline)

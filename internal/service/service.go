@@ -239,10 +239,10 @@ func WithNotes(notes string) TaskOption {
 	}
 }
 
-// WithDelegatedTo sets the delegate and automatically sets waiting-for state.
-func WithDelegatedTo(person string) TaskOption {
+// WithWaitingOn sets who/what the task is waiting on and automatically sets waiting-for state.
+func WithWaitingOn(person string) TaskOption {
 	return func(task *model.Task) {
-		task.DelegatedTo = person
+		task.WaitingOn = person
 		task.State = model.StateWaitingFor
 		now := time.Now().Truncate(24 * time.Hour)
 		task.WaitingSince = &now

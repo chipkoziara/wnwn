@@ -29,6 +29,7 @@ type Project struct {
 	Deadline         *time.Time `yaml:"deadline,omitempty"`
 	Tags             []string   `yaml:"tags,omitempty"`
 	URL              string     `yaml:"url,omitempty"`
+	WaitingOn        string     `yaml:"waiting_on,omitempty"`
 	DefinitionOfDone string     `yaml:"definition_of_done,omitempty"`
 
 	// Sub-groups within the project.

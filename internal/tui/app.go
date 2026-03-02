@@ -51,6 +51,7 @@ const (
 	projFieldTags
 	projFieldDeadline
 	projFieldURL
+	projFieldWaitingOn
 	projFieldDefinitionOfDone
 	projFieldCount // sentinel — keep last
 )
@@ -58,7 +59,7 @@ const (
 // projEditFieldOrder defines the visual and navigation order of fields in the project edit view.
 var projEditFieldOrder = []projEditField{
 	projFieldTitle, projFieldState, projFieldTags,
-	projFieldDeadline, projFieldURL, projFieldDefinitionOfDone,
+	projFieldDeadline, projFieldURL, projFieldWaitingOn, projFieldDefinitionOfDone,
 }
 
 // processStep enumerates the steps in the process inbox decision tree.
@@ -70,7 +71,7 @@ const (
 	stepEnrich                           // Enrich task fields hub (edit text/tags/deadline/schedule/notes)
 	stepEnrichTags                       // Adding tags one at a time (tab to confirm each)
 	stepRoute                            // "Where does it go?" routing decision
-	stepDelegatedTo                      // Text input for delegated_to
+	stepWaitingOn                        // Text input for waiting_on
 	stepNewProject                       // Text input for new project title
 	stepComplete                         // Summary screen (inbox processed)
 )
@@ -80,7 +81,7 @@ const (
 // int, so reordering fields here is the single source of truth.
 var detailFieldOrder = []detailField{
 	fieldText, fieldState, fieldTags, fieldScheduled,
-	fieldDeadline, fieldURL, fieldDelegatedTo, fieldNotes,
+	fieldDeadline, fieldURL, fieldWaitingOn, fieldNotes,
 }
 
 // processStats tracks counts per action type for the completion summary.
@@ -104,7 +105,7 @@ const (
 	fieldDeadline
 	fieldScheduled
 	fieldURL
-	fieldDelegatedTo
+	fieldWaitingOn
 	fieldNotes
 	fieldCount // sentinel — keep last
 )
@@ -722,8 +723,8 @@ func (m Model) updateProcessInbox(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.updateProcessStepEnrichTags(msg)
 	case stepRoute:
 		return m.updateProcessStepRoute(msg)
-	case stepDelegatedTo:
-		return m.updateProcessStepDelegatedTo(msg)
+	case stepWaitingOn:
+		return m.updateProcessStepWaitingOn(msg)
 	case stepNewProject:
 		return m.updateProcessStepNewProject(msg)
 	case stepComplete:
@@ -885,11 +886,11 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		}
 
 	case "w":
-		// Waiting for: go to delegated_to input step.
-		m.processStep = stepDelegatedTo
+		// Waiting for: go to waiting_on input step.
+		m.processStep = stepWaitingOn
 		m.input.Reset()
-		m.input.Placeholder = "Delegated to"
-		m.input.SetValue(m.processTask.DelegatedTo)
+		m.input.Placeholder = "Waiting on"
+		m.input.SetValue(m.processTask.WaitingOn)
 		cmd := m.input.Focus()
 		return m, cmd
 
@@ -942,11 +943,11 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func (m Model) updateProcessStepDelegatedTo(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateProcessStepWaitingOn(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		delegatee := strings.TrimSpace(m.input.Value())
-		m.processTask.DelegatedTo = delegatee
+		waitingOn := strings.TrimSpace(m.input.Value())
+		m.processTask.WaitingOn = waitingOn
 		task := m.processTask
 		return m, func() tea.Msg {
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
@@ -1850,8 +1851,8 @@ func fieldLabel(f detailField) string {
 		return "Scheduled"
 	case fieldURL:
 		return "URL"
-	case fieldDelegatedTo:
-		return "Delegated to"
+	case fieldWaitingOn:
+		return "Waiting on"
 	case fieldNotes:
 		return "Notes"
 	}
@@ -1879,8 +1880,8 @@ func (m Model) fieldValue(f detailField) string {
 		return formatOptionalTime(m.detailTask.Scheduled)
 	case fieldURL:
 		return m.detailTask.URL
-	case fieldDelegatedTo:
-		return m.detailTask.DelegatedTo
+	case fieldWaitingOn:
+		return m.detailTask.WaitingOn
 	case fieldNotes:
 		return m.detailTask.Notes
 	}
@@ -1909,10 +1910,10 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		// Label.
 		// Pre-compute the nudge condition so the label can also be styled.
 		isDateField := f == fieldDeadline || f == fieldScheduled
-		isDelegatedToNudge := f == fieldDelegatedTo &&
+		isWaitingOnNudge := f == fieldWaitingOn &&
 			m.detailTask.State == model.StateWaitingFor &&
-			m.fieldValue(fieldDelegatedTo) == "" && !isEditing
-		if isDelegatedToNudge {
+			m.fieldValue(fieldWaitingOn) == "" && !isEditing
+		if isWaitingOnNudge {
 			b.WriteString(waitingNudgeStyle.Render(fmt.Sprintf("%-14s", label+":")))
 		} else if isSelected {
 			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("%-14s", label+":")))
@@ -1922,14 +1923,14 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		b.WriteString(" ")
 
 		// Value or input.
-		isDelegatedToNudge = f == fieldDelegatedTo &&
+		isWaitingOnNudge = f == fieldWaitingOn &&
 			m.detailTask.State == model.StateWaitingFor &&
 			value == "" && !isEditing
 		if isEditing {
 			b.WriteString(m.input.View())
-		} else if isDelegatedToNudge {
-			// Nudge: waiting-for but no delegatee set yet.
-			b.WriteString(waitingNudgeStyle.Render("— who is this waiting on?"))
+		} else if isWaitingOnNudge {
+			// Nudge: waiting-for but waiting_on not yet set.
+			b.WriteString(waitingNudgeStyle.Render("— who or what are you waiting on?"))
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
 			if isSelected && isDateField {
@@ -2212,8 +2213,8 @@ func (m *Model) applyFieldEdit(val string) {
 		}
 	case fieldURL:
 		m.detailTask.URL = val
-	case fieldDelegatedTo:
-		m.detailTask.DelegatedTo = val
+	case fieldWaitingOn:
+		m.detailTask.WaitingOn = val
 		if val != "" && m.detailTask.State != model.StateWaitingFor {
 			m.detailTask.State = model.StateWaitingFor
 		}
@@ -2231,8 +2232,8 @@ func (m *Model) applyProcessFieldEdit(val string) {
 		}
 	case fieldNotes:
 		m.processTask.Notes = val
-	case fieldDelegatedTo:
-		m.processTask.DelegatedTo = val
+	case fieldWaitingOn:
+		m.processTask.WaitingOn = val
 	}
 }
 
@@ -2408,8 +2409,8 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 		b.WriteString(stateStyle.Render("[esc] back"))
 		b.WriteString("\n")
 
-	case stepDelegatedTo:
-		b.WriteString(inputPromptStyle.Render("  Delegated to:"))
+	case stepWaitingOn:
+		b.WriteString(inputPromptStyle.Render("  Waiting on:"))
 		b.WriteString("\n\n  ")
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
@@ -2610,7 +2611,7 @@ func (m Model) helpText() string {
 			return "tab: add tag  enter: done  esc: cancel"
 		case stepRoute:
 			return "d: done  w: waiting  s: someday/maybe  r: single actions  p: project  n: new project  esc: back"
-		case stepDelegatedTo:
+		case stepWaitingOn:
 			return "enter: confirm  esc: back"
 		case stepNewProject:
 			return "enter: create & refile  esc: back"
@@ -2674,6 +2675,8 @@ func projEditLabel(f projEditField) string {
 		return "Deadline"
 	case projFieldURL:
 		return "URL"
+	case projFieldWaitingOn:
+		return "Waiting on"
 	case projFieldDefinitionOfDone:
 		return "Done when"
 	}
@@ -2700,6 +2703,8 @@ func (m Model) projEditFieldValue(f projEditField) string {
 		return formatOptionalTime(m.projEditProject.Deadline)
 	case projFieldURL:
 		return m.projEditProject.URL
+	case projFieldWaitingOn:
+		return m.projEditProject.WaitingOn
 	case projFieldDefinitionOfDone:
 		return m.projEditProject.DefinitionOfDone
 	}
@@ -2822,6 +2827,8 @@ func (m *Model) applyProjEditFieldEdit(val string) {
 		}
 	case projFieldURL:
 		m.projEditProject.URL = val
+	case projFieldWaitingOn:
+		m.projEditProject.WaitingOn = val
 	case projFieldDefinitionOfDone:
 		m.projEditProject.DefinitionOfDone = val
 	}
@@ -2852,22 +2859,30 @@ func (m Model) renderProjectEditView(b *strings.Builder) {
 		label := projEditLabel(f)
 		value := m.projEditFieldValue(f)
 
+		isDateField := f == projFieldDeadline
+		isWaitingOnNudge := f == projFieldWaitingOn &&
+			m.projEditProject.State == model.StateWaitingFor &&
+			value == "" && !isEditing
+
 		if isSelected {
 			b.WriteString(cursorStyle.Render(" > "))
 		} else {
 			b.WriteString("   ")
 		}
 
-		if isSelected {
+		if isWaitingOnNudge {
+			b.WriteString(waitingNudgeStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		} else if isSelected {
 			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("%-14s", label+":")))
 		} else {
 			b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", label+":")))
 		}
 		b.WriteString(" ")
 
-		isDateField := f == projFieldDeadline
 		if isEditing {
 			b.WriteString(m.input.View())
+		} else if isWaitingOnNudge {
+			b.WriteString(waitingNudgeStyle.Render("— who or what are you waiting on?"))
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
 			if isSelected && isDateField {

@@ -90,7 +90,7 @@ var (
 			Foreground(colorText).
 			Underline(true)
 
-	// waitingNudgeStyle highlights the delegated_to field when state is waiting-for
+	// waitingNudgeStyle highlights the waiting_on field when state is waiting-for
 	// and the field is empty, nudging the user to fill it in.
 	waitingNudgeStyle = lipgloss.NewStyle().
 				Foreground(colorWarning).

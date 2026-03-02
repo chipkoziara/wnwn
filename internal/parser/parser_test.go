@@ -188,8 +188,8 @@ func TestParseProjectFile(t *testing.T) {
 	if task.State != model.StateWaitingFor {
 		t.Errorf("task.State = %q", task.State)
 	}
-	if task.DelegatedTo != "Design Team" {
-		t.Errorf("task.DelegatedTo = %q", task.DelegatedTo)
+	if task.WaitingOn != "Design Team" {
+		t.Errorf("task.WaitingOn = %q", task.WaitingOn)
 	}
 	if task.WaitingSince == nil {
 		t.Fatal("task.WaitingSince is nil")
@@ -343,8 +343,8 @@ func TestProjectRoundTrip(t *testing.T) {
 			if task.State != task2.State {
 				t.Errorf("sg[%d].task[%d].State: %q != %q", i, j, task.State, task2.State)
 			}
-			if task.DelegatedTo != task2.DelegatedTo {
-				t.Errorf("sg[%d].task[%d].DelegatedTo: %q != %q", i, j, task.DelegatedTo, task2.DelegatedTo)
+			if task.WaitingOn != task2.WaitingOn {
+				t.Errorf("sg[%d].task[%d].WaitingOn: %q != %q", i, j, task.WaitingOn, task2.WaitingOn)
 			}
 			if task.Notes != task2.Notes {
 				t.Errorf("sg[%d].task[%d].Notes: %q != %q", i, j, task.Notes, task2.Notes)
@@ -394,7 +394,7 @@ type: single-actions
   deadline: 2026-03-10T17:00
   url: https://example.com
   tags: ["@office", deep-work]
-  delegated_to: Alice
+  waiting_on: Alice
   waiting_since: 2026-03-01
   source: projects/test-project
   ` + "```" + `
@@ -431,8 +431,8 @@ type: single-actions
 	if len(task.Tags) != 2 {
 		t.Errorf("Tags = %v", task.Tags)
 	}
-	if task.DelegatedTo != "Alice" {
-		t.Errorf("DelegatedTo = %q", task.DelegatedTo)
+	if task.WaitingOn != "Alice" {
+		t.Errorf("WaitingOn = %q", task.WaitingOn)
 	}
 	if task.WaitingSince == nil {
 		t.Error("WaitingSince is nil")
