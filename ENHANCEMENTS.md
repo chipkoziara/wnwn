@@ -28,3 +28,7 @@
 
 # Config file
 - Update where text files are stored (set the directory)
+
+# Views
+- Add a view toggle to show grouped by Project as a heading, and can click into project directly with a skeumorphic file pane that slides open? Look at Andy Maschecuk notes
+- Increasingly convinced that single actions and projects are just Views. We shouldn't do anything yet, but I think this simplifies the UX (Inbox is a mandatory view, but everything else is just a view. We'd have default views for single actions or projects, and we'd use those views for Weekly Review since we want to review all of them in their entirety, but again it might just be specific views we'd want to cycle through)
