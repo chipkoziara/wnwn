@@ -16,16 +16,18 @@ Our application will have a few distinctions to make the approach more modern an
 
 ### Task Attributes
 - The task as written is itself an attribute (attribute: "task", e.g. "book flights to/from Hawaii")
-- The "state" of a given task or project (which is built on the same task primitive and has subtasks) can be empty, "next action", "waiting for", "some day/maybe", "done", or "canceled"
-- All tasks can have additional optional attributes: "scheduled", "deadline", "notes", "url", "tags", and "delegated_to"
+- Task states: empty (unprocessed), "next-action", "waiting-for", "some-day/maybe", "done", "canceled"
+- Project states: "active" (being pursued), "waiting-for", "some-day/maybe", "done", "canceled". Projects use "active" rather than "next-action" — a project doesn't have a next action, it *contains* them
+- All tasks can have additional optional attributes: "scheduled", "deadline", "notes", "url", "tags", and "waiting_on"
   - "scheduled" must be a datetime, and it denotes when a user intends to work on that task
   - "deadline" must be a datetime, and it denotes when a user must complete that task
   - "notes" is a paragraph text area that can contain a description of the task that the user wants to log for future reference
   - "url" is a string that users can utilize to point to where the work needs to be done (e.g. a link to an email thread in Gmail, a Slack conversation, a website, etc.)
   - "tags" are a list of strings that users can use to add more context to a given task, and these can be searched / filtered (described later)
-  - "delegated_to" is an optional string capturing who a task has been delegated to; primarily used when state is "waiting for"
+  - "waiting_on" is an optional string capturing who or what a task or project is blocked on; used when state is "waiting-for" (can be a person, system, event, or external decision)
   - When a task transitions to "waiting for" state, the date of that transition is automatically recorded so users can track how long they've been waiting
   - Projects are auto-assigned a tag called "project", but other tags can be added to them
+  - Projects also support "url", "waiting_on", and "definition_of_done" fields in their frontmatter
 
 ### Tags
 - Tags serve double duty as GTD "contexts" — users can create tags like "@home", "@computer", "@office", "@errands" to filter next actions by location or available tools
@@ -52,12 +54,12 @@ Our application will have a few distinctions to make the approach more modern an
 
 #### Search
 - Two search modes are available:
-  1. **Structured query DSL** — filter by attribute (state, tag, deadline, delegated_to, etc.) as described in View Filtering
+  1. **Structured query DSL** — filter by attribute (state, tag, deadline, waiting_on, etc.) as described in View Filtering
   2. **Fuzzy free-text search** — search across task names, notes, and all text content for quick lookups
 - Both modes can be combined (e.g. fuzzy search within a filtered view)
 
 #### View Filtering
-- Views are defined using a text-based query DSL that users type inline (e.g. `state:next-action tag:@home`, `deadline:<2026-03-07`, `delegated_to:marvin`)
+- Views are defined using a text-based query DSL that users type inline (e.g. `state:next-action tag:@home`, `deadline:<2026-03-07`, `waiting_on:marvin`)
 - The DSL supports attribute matching, boolean operators (AND/OR/NOT), and date comparisons
 - Ad-hoc filters can be applied on the fly and optionally saved as named views
 
@@ -82,10 +84,10 @@ We start the app with a view on the "in" list and an easy way to add tasks quick
 - A dedicated guided flow activated by a keyboard shortcut that walks through each "in" list item one at a time
 - For each item, the user is presented with the GTD decision tree:
   1. Is it actionable?
-     - **No** → Trash it or move to "some day/maybe"
-     - **Yes** → What's the next action?
+     - **No** → Trash it (non-actionable items are not deferred; someday/maybe is for actionable-but-not-now)
+     - **Yes** → Enrich the task (text, tags, deadline, schedule, notes), then route:
        - Takes < 2 minutes? → Do it now, then mark done
-       - Delegate? → Set state to "waiting for", capture "delegated_to", refile
+       - Delegate or blocked? → Set state to "waiting for", capture "waiting_on", refile
        - Defer? → Set state to "next action", assign to "single actions" or a project
        - Multi-step? → Create or assign to a project, define first next action
 - Items are presented in FIFO order (oldest first, as GTD prescribes)
@@ -163,14 +165,14 @@ Tasks are represented as Markdown checkbox list items. Metadata is stored in a f
   ```
 ```
 
-**Waiting-for task with delegation tracking:**
+**Waiting-for task:**
 ```markdown
 - [ ] Get quarterly report from Marvin
   ```yaml
   id: 01JNQXCF5NPQR7TWYZ2BDEV8MN
   created: 2026-02-18T14:00
   state: waiting-for
-  delegated_to: Marvin
+  waiting_on: Marvin
   waiting_since: 2026-02-20
   tags: ["@office", reports]
   ```
@@ -248,7 +250,7 @@ Each project is its own file. Project-level metadata lives in YAML frontmatter. 
 ---
 title: Launch Website
 id: 01JNQXKP7VWXY9ZAB0CDEF3GHI
-state: next-action
+state: active
 deadline: 2026-06-01T00:00
 tags: [project, launch, "@office"]
 ---
@@ -273,7 +275,7 @@ deadline: 2026-04-01T00:00
   ```yaml
   id: 01JNQXNS0YZAB2CDE3FGHI6JKL
   state: waiting-for
-  delegated_to: Design Team
+  waiting_on: Design Team
   waiting_since: 2026-03-01
   ```
 
@@ -315,7 +317,7 @@ deadline: 2026-06-01T00:00
   ```yaml
   id: 01JNQXUY6EFGH8IJK9LMNO2PQR
   state: waiting-for
-  delegated_to: Sarah
+  waiting_on: Sarah
   waiting_since: 2026-02-25
   tags: ["@office"]
   ```
@@ -327,23 +329,23 @@ deadline: 2026-06-01T00:00
 |---|---|---|---|
 | `id` | ULID string | Yes | Unique task identifier, auto-generated |
 | `created` | datetime | Yes | Auto-set when task is created |
-| `state` | enum string | No | One of: `next-action`, `waiting-for`, `some-day/maybe`, `done`, `canceled`. Empty = unprocessed |
+| `state` | enum string | No | Tasks: `next-action`, `waiting-for`, `some-day/maybe`, `done`, `canceled` (empty = unprocessed). Projects: `active`, `waiting-for`, `some-day/maybe`, `done`, `canceled` |
 | `scheduled` | datetime | No | When the user intends to work on the task |
 | `deadline` | datetime | No | When the task must be completed |
 | `url` | string | No | Link to where the work happens |
 | `tags` | list of strings | No | Context and category tags |
-| `delegated_to` | string | No | Who the task is delegated to (used with `waiting-for` state) |
+| `waiting_on` | string | No | Who or what the task/project is waiting on (person, system, event, or decision); used with `waiting-for` state |
 | `waiting_since` | date | No | Auto-set when task enters `waiting-for` state |
 | `source` | string | No | Auto-set when a task is archived; records origin (e.g. `single-actions`, `projects/launch-website`) |
 | `notes` | — | No | Not a YAML field; written as indented Markdown prose below the YAML block |
 
 ## 5. Architecture & Tech Stack
 
-We are building a cross-platform TUI (prioritize Mac/Linux) using [Bubbletea](https://github.com/charmbracelet/bubbletea) and the following companion libraries from the Charm ecosystem:
-- **[Lipgloss](https://github.com/charmbracelet/lipgloss)** — styling, layout, and theming (powers the theme/color configuration)
-- **[Bubbles](https://github.com/charmbracelet/bubbles)** — reusable TUI components (text inputs, lists, viewports, spinners, tables)
-- **[Huh](https://github.com/charmbracelet/huh)** — form and wizard framework (powers task creation, process inbox mode, and weekly review flows)
-- **[Glamour](https://github.com/charmbracelet/glamour)** — terminal markdown rendering (for displaying task notes inline)
+We are building a cross-platform TUI (prioritize Mac/Linux) using [Bubbletea v2](https://charm.land/bubbletea/v2) and the following companion libraries from the Charm ecosystem:
+- **[Lipgloss v2](https://charm.land/lipgloss/v2)** — styling, layout, and theming (powers the theme/color configuration)
+- **[Bubbles v2](https://charm.land/bubbles/v2)** — reusable TUI components (text inputs, lists, viewports, spinners, tables)
+
+Note: Bubbletea v2 uses `charm.land/*` import paths (not `github.com/charmbracelet/*`). The v2 API has breaking changes: `View()` returns `tea.View` (not string), key messages are `tea.KeyPressMsg` (not `tea.KeyMsg`). No third-party form/wizard library compatible with v2 exists yet — interactive flows (process inbox, weekly review) are implemented directly using Bubbletea state machines.
 
 ## 6. Configuration
 
