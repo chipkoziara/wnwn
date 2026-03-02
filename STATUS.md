@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 35 tests passing)
+### Data Layer (fully working, 80 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
@@ -175,16 +175,17 @@ Prioritized by impact:
 
 7. **Invalid datetime validation** — The date picker prevents most invalid dates. Text input for dates (in task detail view) could get validation, but it's low priority. The date picker is the primary input mechanism.
 
-### Power Features
+### Power Features (prioritized)
 
-9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml is still deferred (see item 12 below).
-10. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
-11. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
+9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml still deferred (see item 12).
+10. **"Recently Modified" default view** — Quick win now that Views are shipped. Add a `created:>today` (or similar) built-in view to `model.DefaultViews()` to address the "accidental refile" feedback in ENHANCEMENTS.md.
+11. **Weekly review mode** - Guided review flow: projects with no next actions, aging waiting-for items, someday/maybe cleanup (BRD section 3). All data layer primitives now exist via `CollectAllTasks`. Recommended next major feature.
 12. **Config file** - TOML at `~/.config/wnwn/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
-13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+13. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
+14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (31 total: 8 parser + 23 service).
+- None currently open. All tests pass (80 total: 8 parser + 42 query + 27 service + 3 writer/parser roundtrip).
 
 ---
 
