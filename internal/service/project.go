@@ -74,7 +74,7 @@ func (svc *Service) CreateProject(title string, subGroupTitle string) (*model.Pr
 	proj := &model.Project{
 		Title: title,
 		ID:    id.New(),
-		State: model.StateNextAction,
+		State: model.StateActive,
 		Tags:  []string{"project"},
 	}
 

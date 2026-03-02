@@ -9,7 +9,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 ## What's Built
 
 ### Data Layer (fully working, 31 tests passing)
-- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup types with full GTD attributes (state, deadline, scheduled, tags, delegated_to, waiting_since, etc.)
+- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup types with full GTD attributes (state, deadline, scheduled, tags, delegated_to, waiting_since, etc.). Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
 - **ULID generation** (`internal/id/`): Task IDs using oklog/ulid.

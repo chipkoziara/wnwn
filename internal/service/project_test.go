@@ -21,8 +21,8 @@ func TestCreateProject(t *testing.T) {
 	if proj.ID == "" {
 		t.Error("ID is empty")
 	}
-	if proj.State != model.StateNextAction {
-		t.Errorf("State = %q", proj.State)
+	if proj.State != model.StateActive {
+		t.Errorf("State = %q, want %q", proj.State, model.StateActive)
 	}
 	if len(proj.Tags) != 1 || proj.Tags[0] != "project" {
 		t.Errorf("Tags = %v", proj.Tags)

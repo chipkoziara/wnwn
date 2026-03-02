@@ -1638,7 +1638,9 @@ func (m Model) renderProjectListView(b *strings.Builder) {
 
 		// Metadata.
 		var meta []string
-		if p.State != model.StateEmpty {
+		// Only show state when it's noteworthy — active and next-action are the
+		// normal/default states and don't need to be displayed.
+		if p.State != model.StateEmpty && p.State != model.StateActive && p.State != model.StateNextAction {
 			meta = append(meta, stateStyle.Render(string(p.State)))
 		}
 		meta = append(meta, stateStyle.Render(fmt.Sprintf("%d tasks", p.TaskCount)))
@@ -2684,10 +2686,14 @@ func (m Model) projEditFieldValue(f projEditField) string {
 	case projFieldTitle:
 		return m.projEditProject.Title
 	case projFieldState:
-		if m.projEditProject.State == model.StateEmpty {
-			return "(active)"
+		switch m.projEditProject.State {
+		case model.StateEmpty:
+			return "active" // treat empty as active (legacy files)
+		case model.StateNextAction:
+			return "active (legacy: next-action)" // surface legacy state clearly
+		default:
+			return string(m.projEditProject.State)
 		}
-		return string(m.projEditProject.State)
 	case projFieldTags:
 		return strings.Join(m.projEditProject.Tags, ", ")
 	case projFieldDeadline:
@@ -2775,10 +2781,13 @@ func (m Model) updateProjectEdit(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // cycleProjectState cycles through project-relevant states.
+// Projects use StateActive (not StateNextAction) as their "being worked on" state.
+// StateWaitingFor is included because a project can be blocked on an external dependency.
+// StateEmpty and StateNextAction are task-only concepts and are excluded.
 func cycleProjectState(s model.TaskState) model.TaskState {
 	states := []model.TaskState{
-		model.StateEmpty,
-		model.StateNextAction,
+		model.StateActive,
+		model.StateWaitingFor,
 		model.StateSomeday,
 		model.StateDone,
 		model.StateCanceled,
@@ -2788,7 +2797,7 @@ func cycleProjectState(s model.TaskState) model.TaskState {
 			return states[(i+1)%len(states)]
 		}
 	}
-	return model.StateNextAction
+	return model.StateActive
 }
 
 // applyProjEditFieldEdit applies a text input value to the project working copy.

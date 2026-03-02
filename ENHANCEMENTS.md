@@ -24,3 +24,6 @@
 - Review default keybindings and see if there are inconsistencies and ways I can improve with better, more consistent mnemonics
 - Add setting keybindings by config.toml (set defaults in the file?)
 - Improve UX generally with more fun injected :)
+
+# Config file
+- Update where text files are stored (set the directory)

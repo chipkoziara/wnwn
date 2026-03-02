@@ -7,10 +7,11 @@ import "time"
 type TaskState string
 
 const (
-	StateEmpty      TaskState = ""             // Unprocessed (inbox item)
-	StateNextAction TaskState = "next-action"  // Ready to be worked on
-	StateWaitingFor TaskState = "waiting-for"  // Delegated / blocked
-	StateSomeday    TaskState = "some-day/maybe"
+	StateEmpty      TaskState = ""               // Unprocessed (inbox item); tasks only
+	StateNextAction TaskState = "next-action"    // Ready to be worked on; tasks only
+	StateActive     TaskState = "active"         // Project is being actively pursued; projects only
+	StateWaitingFor TaskState = "waiting-for"    // Delegated / blocked
+	StateSomeday    TaskState = "some-day/maybe" // Deferred indefinitely
 	StateDone       TaskState = "done"
 	StateCanceled   TaskState = "canceled"
 )
@@ -55,9 +56,9 @@ type Task struct {
 	Deadline  *time.Time `yaml:"deadline,omitempty"`
 
 	// Optional metadata
-	URL          string   `yaml:"url,omitempty"`
-	Tags         []string `yaml:"tags,omitempty"`
-	DelegatedTo  string   `yaml:"delegated_to,omitempty"`
+	URL          string     `yaml:"url,omitempty"`
+	Tags         []string   `yaml:"tags,omitempty"`
+	DelegatedTo  string     `yaml:"delegated_to,omitempty"`
 	WaitingSince *time.Time `yaml:"waiting_since,omitempty"`
 
 	// Source is set when a task is archived, recording where it came from.
