@@ -18,7 +18,9 @@
 
 # Task Edits
 - ~~When setting a task as "waiting-for" can we light up the "delegated to" field visually so users know to enter something there? Don't make it required~~ — Fixed. When state is `waiting-for` and `delegated_to` is empty, the entire row renders in amber (`waitingNudgeStyle`) with the prompt "— who is this waiting on?". Disappears once a value is entered or the state changes.
+- Consider the order of task editing / which fields appear where (e.g. should notes be higher / lower)
 
 # General Edits
 - Review default keybindings and see if there are inconsistencies and ways I can improve with better, more consistent mnemonics
 - Add setting keybindings by config.toml (set defaults in the file?)
+- Improve UX generally with more fun injected :)
