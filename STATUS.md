@@ -1,6 +1,6 @@
 # G-Tuddy Project Status
 
-Last updated: 2026-03-01 (session 2)
+Last updated: 2026-03-01 (session 3)
 
 ## What This Is
 
@@ -75,9 +75,26 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `d`: mark task done
+- `E`: open project edit view (edit metadata)
 - `ctrl+j`/`ctrl+k`: reorder task within sub-group (cursor follows)
 - `m`: move task to a different sub-group (picker)
 - `esc`: back to project list
+
+**Project list view:**
+- `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
+
+**Project edit view** (`viewProjectEdit`, opened with `E` from project list or detail):
+- Navigable field list: title, state, tags, deadline, URL, definition of done
+- `j`/`k`: navigate between fields
+- `e` or `enter`: edit selected field
+  - **State**: cycles through project-relevant states (empty → next-action → someday → done → canceled)
+  - **Deadline**: opens the calendar date picker
+  - **All other fields**: inline text input; `enter` confirms, `esc` cancels
+  - **Tags**: comma-separated in the text input
+- `s`: save all changes (renames file on disk if title changed) and return to previous view
+- `esc`: discard changes and return to previous view
+- Read-only section shows: ID, original filename
+- Rename: changing the title automatically renames the `.md` file on disk (via `store.RenameProject`)
 
 **Task detail view** (`viewTaskDetail`):
 - Opens from any list or project detail view with `enter`
@@ -139,12 +156,6 @@ Prioritized by impact:
 
 7. **Invalid datetime validation** — The date picker prevents most invalid dates. Text input for dates (in task detail view) could get validation, but it's low priority. The date picker is the primary input mechanism.
 
-8. **Project creation and editing workflow** — Several improvements identified:
-   - *Rename projects:* Currently the filename is derived from the title at creation and never updated. Renaming needs to update the file on disk (or add an indirection layer). Non-trivial.
-   - *Definition of Done field:* A text field on `model.Project` describing what "done" means for the project. Requires parser/writer/model changes.
-   - *URL field on projects:* A link to external documentation (Google Drive, wiki, etc.). Same scope as Definition of Done.
-   - **Recommendation:** Bundle these into a dedicated "Project Editing" enhancement pass. The model needs new fields, the parser/writer need updates, and the TUI needs a project detail editing mode.
-
 ### Power Features
 
 9. **Views / query DSL / filtering** - Text-based query language for filtered views across all lists (BRD section 2, "View Filtering"). Not started. Includes saved views in config.
@@ -161,6 +172,19 @@ Prioritized by impact:
 ## Shipped: Process Inbox Mode
 
 Built and shipped in session 2. Full design notes in the commit message and Architecture Notes section above. See the TUI section above for keybinding reference.
+
+## Shipped: Project Editing
+
+Built and shipped in session 3. Key design decisions:
+
+- **`model.Project` extended** with `URL string` and `DefinitionOfDone string` fields (both `omitempty` in YAML).
+- **`store.RenameProject(oldFilename, proj)`** — writes new file (slug derived from new title), deletes old if name changed. Handles the no-rename case (same slug) by just rewriting content.
+- **`service.UpdateProject(oldFilename, updated)`** — reads current project from disk (preserving sub-groups and ID), applies mutable fields from the working copy, calls `RenameProject`. Returns the (possibly new) filename to the caller.
+- **`projEditField` enum + `projEditFieldOrder`** — mirrors the `detailField`/`detailFieldOrder` pattern from task editing. Navigation and rendering both driven from a single slice.
+- **`viewProjectEdit`** — a new view state. Opened with `E` from either the project list or project detail view. Holds `projEditProject model.Project` and `projEditFilename string` as the working copy. Save (`s`) calls `UpdateProject`; `esc` discards.
+- **Shared mode reuse** — `modeEditingField` writes to `projEditProject` when `m.view == viewProjectEdit` (via `applyProjEditFieldEdit`). `modePickingDate` writes to `projEditProject.Deadline` when in project edit view. Pattern matches how process inbox shares these modes.
+- **`projectEditLoadedMsg`** — carries the loaded project + originating view. Follows the same message-passing pattern as `projectDetailMsg`.
+- **`projectUpdatedMsg`** — carries the new filename. On receipt, if the originating view was project detail, reloads that view with the (possibly renamed) file; otherwise returns to project list.
 
 
 ## Architecture Notes

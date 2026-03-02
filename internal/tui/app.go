@@ -39,7 +39,27 @@ const (
 	viewProjectDetail                  // viewing a single project's sub-groups and tasks
 	viewTaskDetail                     // viewing/editing a single task's attributes
 	viewProcessInbox                   // guided GTD decision tree for processing inbox items
+	viewProjectEdit                    // editing project-level metadata (title, state, tags, etc.)
 )
+
+// projEditField enumerates the editable fields in the project edit view.
+type projEditField int
+
+const (
+	projFieldTitle projEditField = iota
+	projFieldState
+	projFieldTags
+	projFieldDeadline
+	projFieldURL
+	projFieldDefinitionOfDone
+	projFieldCount // sentinel — keep last
+)
+
+// projEditFieldOrder defines the visual and navigation order of fields in the project edit view.
+var projEditFieldOrder = []projEditField{
+	projFieldTitle, projFieldState, projFieldTags,
+	projFieldDeadline, projFieldURL, projFieldDefinitionOfDone,
+}
 
 // processStep enumerates the steps in the process inbox decision tree.
 type processStep int
@@ -132,6 +152,12 @@ type Model struct {
 	datePicker      datepicker.Model // calendar date picker component
 	datePickerField detailField      // which detail field the picker is editing
 
+	// Project edit state.
+	projEditProject  model.Project // working copy of the project being edited
+	projEditFilename string        // original filename (before possible rename)
+	projEditField    projEditField // which field is currently selected
+	projEditFromView viewState     // view to return to on esc/save
+
 	// Process inbox state.
 	processItems []model.Task // snapshot of inbox tasks taken at activation
 	processIdx   int          // index of the current item being processed (0-based)
@@ -192,6 +218,10 @@ type projectDetailMsg struct {
 type projectCreatedMsg struct {
 	title    string
 	filename string // slug filename of the created project
+}
+type projectUpdatedMsg struct {
+	title       string
+	newFilename string
 }
 type errMsg struct{ err error }
 
@@ -272,6 +302,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("Created project: %s", msg.title)
 		return m, tea.Batch(m.loadProjects, m.clearStatusAfter())
 
+	case projectEditLoadedMsg:
+		m.projEditProject = msg.project
+		m.projEditFilename = msg.filename
+		m.projEditFromView = msg.fromView
+		m.projEditField = projEditFieldOrder[0]
+		m.view = viewProjectEdit
+		return m, nil
+
+	case projectUpdatedMsg:
+		m.statusMsg = fmt.Sprintf("Saved: %s", msg.title)
+		m.activeFilename = msg.newFilename
+		if m.projEditFromView == viewProjectDetail {
+			// Stay in project detail but reload with new filename.
+			m.view = viewProjectDetail
+			return m, tea.Batch(m.loadProjectDetail(msg.newFilename), m.clearStatusAfter())
+		}
+		// Return to project list.
+		m.view = viewProjects
+		m.cursor = 0
+		return m, tea.Batch(m.loadProjects, m.clearStatusAfter())
+
 	case processInboxLoadedMsg:
 		if len(msg.tasks) == 0 {
 			m.statusMsg = "Inbox is empty — nothing to process"
@@ -346,6 +397,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateTaskDetail(msg)
 			case viewProcessInbox:
 				return m.updateProcessInbox(msg)
+			case viewProjectEdit:
+				return m.updateProjectEdit(msg)
 			default:
 				return m.updateNormal(msg)
 			}
@@ -984,6 +1037,12 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.input.Focus()
 		return m, cmd
 
+	case "E":
+		// Open edit view for the selected project.
+		if len(m.projects) > 0 {
+			return m, m.openProjectEdit(m.projects[m.cursor].Filename, viewProjects)
+		}
+
 	case "1":
 		m.view = viewList
 		m.currentList = model.ListIn
@@ -1133,6 +1192,12 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				return m, nil
 			}
+		}
+
+	case "E":
+		// Open edit view for the active project.
+		if m.activeFilename != "" {
+			return m, m.openProjectEdit(m.activeFilename, viewProjectDetail)
 		}
 
 	case "1":
@@ -1478,6 +1543,8 @@ func (m Model) View() tea.View {
 		m.renderProcessInbox(&b)
 	case m.view == viewTaskDetail:
 		m.renderTaskDetailView(&b)
+	case m.view == viewProjectEdit:
+		m.renderProjectEditView(&b)
 	case m.view == viewProjects:
 		m.renderProjectListView(&b)
 	case m.view == viewProjectDetail:
@@ -1936,6 +2003,10 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			case fieldScheduled:
 				m.processTask.Scheduled = &picked
 			}
+		} else if m.view == viewProjectEdit {
+			// Write back into the project edit working copy.
+			// Only deadline is supported for projects.
+			m.projEditProject.Deadline = &picked
 		} else {
 			// Write the picked time back into the task detail working copy.
 			switch m.datePickerField {
@@ -2065,6 +2136,11 @@ func (m Model) updateEditingField(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.view == viewProcessInbox {
 			// Apply the edit to the process working copy and return to enrich step.
 			m.applyProcessFieldEdit(val)
+			m.mode = modeNormal
+			return m, nil
+		}
+		if m.view == viewProjectEdit {
+			m.applyProjEditFieldEdit(val)
 			m.mode = modeNormal
 			return m, nil
 		}
@@ -2467,7 +2543,7 @@ func (m Model) renderTabBar() string {
 		tabs[1] = inactiveTabStyle.Render(actionsLabel)
 	}
 
-	if m.view == viewProjects || m.view == viewProjectDetail {
+	if m.view == viewProjects || m.view == viewProjectDetail || m.view == viewProjectEdit {
 		count := len(m.projects)
 		tabs[2] = activeTabStyle.Render(fmt.Sprintf("%s(%d)", projectsLabel, count))
 	} else {
@@ -2529,19 +2605,282 @@ func (m Model) helpText() string {
 		}
 	}
 
+	if m.view == viewProjectEdit {
+		if m.mode == modeEditingField {
+			return "enter: save field  esc: cancel edit"
+		}
+		return "j/k: navigate fields  e/enter: edit  space: cycle state  s: save & back  esc: back (discard)"
+	}
+
 	nav := "j/k: navigate  tab: switch list  q: quit"
 
 	switch m.view {
 	case viewProjects:
-		return "enter: open  a: new project  " + nav
+		return "enter: open  a: new project  E: edit project  " + nav
 	case viewProjectDetail:
-		return "enter: detail  a: add task  n: new sub-group  d: done  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
+		return "enter: detail  a: add task  n: new sub-group  d: done  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
 			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 		}
 		return "enter: detail  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
 	}
+}
+
+// ── Project Edit View ────────────────────────────────────────────────────────
+
+// openProjectEdit loads a project from disk into the working copy and switches to viewProjectEdit.
+func (m Model) openProjectEdit(filename string, fromView viewState) tea.Cmd {
+	return func() tea.Msg {
+		proj, err := m.svc.GetProject(filename)
+		if err != nil {
+			return errMsg{err}
+		}
+		return projectEditLoadedMsg{project: *proj, filename: filename, fromView: fromView}
+	}
+}
+
+// projectEditLoadedMsg carries the project data when opening the project edit view.
+type projectEditLoadedMsg struct {
+	project  model.Project
+	filename string
+	fromView viewState
+}
+
+// projEditLabel returns a display label for a project edit field.
+func projEditLabel(f projEditField) string {
+	switch f {
+	case projFieldTitle:
+		return "Title"
+	case projFieldState:
+		return "State"
+	case projFieldTags:
+		return "Tags"
+	case projFieldDeadline:
+		return "Deadline"
+	case projFieldURL:
+		return "URL"
+	case projFieldDefinitionOfDone:
+		return "Done when"
+	}
+	return ""
+}
+
+// projEditFieldValue returns the current display value of a project edit field.
+func (m Model) projEditFieldValue(f projEditField) string {
+	switch f {
+	case projFieldTitle:
+		return m.projEditProject.Title
+	case projFieldState:
+		if m.projEditProject.State == model.StateEmpty {
+			return "(active)"
+		}
+		return string(m.projEditProject.State)
+	case projFieldTags:
+		return strings.Join(m.projEditProject.Tags, ", ")
+	case projFieldDeadline:
+		return formatOptionalTime(m.projEditProject.Deadline)
+	case projFieldURL:
+		return m.projEditProject.URL
+	case projFieldDefinitionOfDone:
+		return m.projEditProject.DefinitionOfDone
+	}
+	return ""
+}
+
+// nextProjEditField returns the field delta positions away from current, clamped.
+func nextProjEditField(current projEditField, delta int) projEditField {
+	for i, f := range projEditFieldOrder {
+		if f == current {
+			next := i + delta
+			if next < 0 {
+				next = 0
+			} else if next >= len(projEditFieldOrder) {
+				next = len(projEditFieldOrder) - 1
+			}
+			return projEditFieldOrder[next]
+		}
+	}
+	return projEditFieldOrder[0]
+}
+
+// updateProjectEdit handles keys in the project edit view.
+func (m Model) updateProjectEdit(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc":
+		// Discard — return to the originating view.
+		m.view = m.projEditFromView
+		return m, nil
+
+	case "j", "down":
+		m.projEditField = nextProjEditField(m.projEditField, 1)
+
+	case "k", "up":
+		m.projEditField = nextProjEditField(m.projEditField, -1)
+
+	case "g":
+		m.projEditField = projEditFieldOrder[0]
+
+	case "G":
+		m.projEditField = projEditFieldOrder[len(projEditFieldOrder)-1]
+
+	case "e", "enter":
+		if m.projEditField == projFieldState {
+			m.projEditProject.State = cycleProjectState(m.projEditProject.State)
+			return m, nil
+		}
+		if m.projEditField == projFieldDeadline {
+			m.mode = modePickingDate
+			m.datePickerField = fieldDeadline // reuse task detailField enum for date picker routing
+			var initial time.Time
+			if m.projEditProject.Deadline != nil {
+				initial = *m.projEditProject.Deadline
+			}
+			cmd := m.datePicker.Open(initial)
+			return m, cmd
+		}
+		// Text input for all other fields.
+		m.mode = modeEditingField
+		m.input.Reset()
+		m.input.Placeholder = projEditLabel(m.projEditField)
+		m.input.SetValue(m.projEditFieldValue(m.projEditField))
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "space":
+		if m.projEditField == projFieldState {
+			m.projEditProject.State = cycleProjectState(m.projEditProject.State)
+		}
+
+	case "s":
+		return m, m.saveProjectEdit()
+	}
+
+	return m, nil
+}
+
+// cycleProjectState cycles through project-relevant states.
+func cycleProjectState(s model.TaskState) model.TaskState {
+	states := []model.TaskState{
+		model.StateEmpty,
+		model.StateNextAction,
+		model.StateSomeday,
+		model.StateDone,
+		model.StateCanceled,
+	}
+	for i, st := range states {
+		if st == s {
+			return states[(i+1)%len(states)]
+		}
+	}
+	return model.StateNextAction
+}
+
+// applyProjEditFieldEdit applies a text input value to the project working copy.
+func (m *Model) applyProjEditFieldEdit(val string) {
+	switch m.projEditField {
+	case projFieldTitle:
+		if val != "" {
+			m.projEditProject.Title = val
+		}
+	case projFieldTags:
+		if val == "" {
+			m.projEditProject.Tags = nil
+		} else {
+			parts := strings.Split(val, ",")
+			tags := make([]string, 0, len(parts))
+			for _, p := range parts {
+				if t := strings.TrimSpace(p); t != "" {
+					tags = append(tags, t)
+				}
+			}
+			m.projEditProject.Tags = tags
+		}
+	case projFieldURL:
+		m.projEditProject.URL = val
+	case projFieldDefinitionOfDone:
+		m.projEditProject.DefinitionOfDone = val
+	}
+}
+
+// saveProjectEdit writes the working copy to disk via UpdateProject.
+func (m Model) saveProjectEdit() tea.Cmd {
+	proj := m.projEditProject
+	oldFilename := m.projEditFilename
+	return func() tea.Msg {
+		newFilename, err := m.svc.UpdateProject(oldFilename, proj)
+		if err != nil {
+			return errMsg{err}
+		}
+		return projectUpdatedMsg{title: proj.Title, newFilename: newFilename}
+	}
+}
+
+// renderProjectEditView renders the project metadata edit form.
+func (m Model) renderProjectEditView(b *strings.Builder) {
+	b.WriteString(projectTitleStyle.Render("Edit Project"))
+	b.WriteString("\n\n")
+
+	for _, f := range projEditFieldOrder {
+		isSelected := f == m.projEditField
+		isEditing := isSelected && m.mode == modeEditingField
+
+		label := projEditLabel(f)
+		value := m.projEditFieldValue(f)
+
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+		} else {
+			b.WriteString("   ")
+		}
+
+		if isSelected {
+			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		} else {
+			b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		}
+		b.WriteString(" ")
+
+		isDateField := f == projFieldDeadline
+		if isEditing {
+			b.WriteString(m.input.View())
+		} else if value == "" {
+			b.WriteString(helpStyle.Render("—"))
+			if isSelected && isDateField {
+				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+			}
+		} else if f == projFieldState {
+			b.WriteString(stateStyle.Render(value))
+		} else if isDateField {
+			b.WriteString(deadlineStyle.Render(value))
+			if isSelected {
+				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+			}
+		} else if f == projFieldTags {
+			b.WriteString(tagStyle.Render(value))
+		} else {
+			b.WriteString(value)
+		}
+		b.WriteString("\n")
+	}
+
+	// Read-only section.
+	b.WriteString("\n")
+	b.WriteString(stateStyle.Render("  ─── read-only ───────────────────────────────"))
+	b.WriteString("\n")
+	b.WriteString("   ")
+	b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "ID:")))
+	b.WriteString(" ")
+	b.WriteString(stateStyle.Render(m.projEditProject.ID))
+	b.WriteString("\n")
+	b.WriteString("   ")
+	b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "File:")))
+	b.WriteString(" ")
+	b.WriteString(stateStyle.Render(m.projEditFilename))
+	b.WriteString("\n")
 }
 
 // clampCursor ensures the cursor is within bounds for the current view.

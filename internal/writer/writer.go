@@ -62,6 +62,12 @@ func WriteProject(w io.Writer, proj *model.Project) error {
 	if len(proj.Tags) > 0 {
 		fmt.Fprintf(w, "tags: [%s]\n", joinQuotedTags(proj.Tags))
 	}
+	if proj.URL != "" {
+		fmt.Fprintf(w, "url: %s\n", proj.URL)
+	}
+	if proj.DefinitionOfDone != "" {
+		fmt.Fprintf(w, "definition_of_done: %s\n", proj.DefinitionOfDone)
+	}
 	fmt.Fprintf(w, "---\n")
 
 	// Title heading

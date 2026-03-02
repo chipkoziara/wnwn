@@ -145,6 +145,28 @@ func (s *Store) WriteProject(proj *model.Project) error {
 	return nil
 }
 
+// RenameProject writes the project with the new title (which determines the new filename
+// via Slugify) and removes the old file. Returns the new filename.
+// If oldFilename already matches the new slug, only the content is rewritten.
+func (s *Store) RenameProject(oldFilename string, proj *model.Project) (string, error) {
+	newFilename := Slugify(proj.Title) + ".md"
+
+	// Write to new path (WriteProject derives filename from proj.Title).
+	if err := s.WriteProject(proj); err != nil {
+		return "", fmt.Errorf("writing renamed project: %w", err)
+	}
+
+	// Remove old file if the name changed.
+	if oldFilename != newFilename {
+		oldPath := filepath.Join(s.Root, "projects", oldFilename)
+		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+			return newFilename, fmt.Errorf("removing old project file: %w", err)
+		}
+	}
+
+	return newFilename, nil
+}
+
 // ListProjects returns the filenames of all project files.
 func (s *Store) ListProjects() ([]string, error) {
 	dir := filepath.Join(s.Root, "projects")

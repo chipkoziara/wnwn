@@ -23,11 +23,13 @@ type SubGroup struct {
 // The body contains sub-groups (## headings) with actions.
 type Project struct {
 	// Frontmatter metadata
-	Title    string     `yaml:"title"`
-	ID       string     `yaml:"id"`
-	State    TaskState  `yaml:"state,omitempty"`
-	Deadline *time.Time `yaml:"deadline,omitempty"`
-	Tags     []string   `yaml:"tags,omitempty"`
+	Title            string     `yaml:"title"`
+	ID               string     `yaml:"id"`
+	State            TaskState  `yaml:"state,omitempty"`
+	Deadline         *time.Time `yaml:"deadline,omitempty"`
+	Tags             []string   `yaml:"tags,omitempty"`
+	URL              string     `yaml:"url,omitempty"`
+	DefinitionOfDone string     `yaml:"definition_of_done,omitempty"`
 
 	// Sub-groups within the project.
 	SubGroups []SubGroup `yaml:"-"`

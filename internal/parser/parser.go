@@ -316,11 +316,13 @@ func ParseProject(r io.Reader) (*model.Project, error) {
 	if fmStr != "" {
 		// Use raw parsing for flexible time handling.
 		var raw struct {
-			Title    string   `yaml:"title"`
-			ID       string   `yaml:"id"`
-			State    string   `yaml:"state"`
-			Deadline string   `yaml:"deadline"`
-			Tags     []string `yaml:"tags"`
+			Title            string   `yaml:"title"`
+			ID               string   `yaml:"id"`
+			State            string   `yaml:"state"`
+			Deadline         string   `yaml:"deadline"`
+			Tags             []string `yaml:"tags"`
+			URL              string   `yaml:"url"`
+			DefinitionOfDone string   `yaml:"definition_of_done"`
 		}
 		if err := yaml.Unmarshal([]byte(fmStr), &raw); err != nil {
 			return nil, fmt.Errorf("frontmatter: %w", err)
@@ -329,6 +331,8 @@ func ParseProject(r io.Reader) (*model.Project, error) {
 		proj.ID = raw.ID
 		proj.State = model.TaskState(raw.State)
 		proj.Tags = raw.Tags
+		proj.URL = raw.URL
+		proj.DefinitionOfDone = raw.DefinitionOfDone
 		if raw.Deadline != "" {
 			t, err := parseTime(raw.Deadline)
 			if err != nil {

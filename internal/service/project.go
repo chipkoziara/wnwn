@@ -93,6 +93,32 @@ func (svc *Service) CreateProject(title string, subGroupTitle string) (*model.Pr
 	return proj, nil
 }
 
+// UpdateProject replaces the mutable metadata fields of a project (title, state, tags,
+// deadline, URL, DefinitionOfDone). Sub-groups and tasks are preserved from disk.
+// If the title changed, the project file is renamed on disk.
+// Returns the (possibly new) filename.
+func (svc *Service) UpdateProject(oldFilename string, updated model.Project) (string, error) {
+	// Read current project to preserve sub-groups and ID.
+	proj, err := svc.Store.ReadProject(oldFilename)
+	if err != nil {
+		return "", fmt.Errorf("reading project: %w", err)
+	}
+
+	// Apply mutable fields.
+	proj.Title = updated.Title
+	proj.State = updated.State
+	proj.Tags = updated.Tags
+	proj.Deadline = updated.Deadline
+	proj.URL = updated.URL
+	proj.DefinitionOfDone = updated.DefinitionOfDone
+
+	newFilename, err := svc.Store.RenameProject(oldFilename, proj)
+	if err != nil {
+		return "", fmt.Errorf("updating project: %w", err)
+	}
+	return newFilename, nil
+}
+
 // AddSubGroup adds a new sub-group to an existing project.
 func (svc *Service) AddSubGroup(filename string, title string) (*model.SubGroup, error) {
 	proj, err := svc.Store.ReadProject(filename)
