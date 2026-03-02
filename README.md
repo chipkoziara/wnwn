@@ -12,11 +12,13 @@ Data is stored as plain Markdown files ([File Over App](https://stephango.com/fi
 - **Plain Markdown storage** — human-readable files you can edit with any text editor
 - **GTD contexts via tags** — `@home`, `@computer`, `@errands`, etc.
 - **Project sub-groups** — organize large projects into named phases or milestones
+- **Project editing** — rename projects (auto-renames the file), set state, deadline, URL, definition of done, and waiting-on
+- **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
 - **Auto-archiving** — done/canceled tasks move to monthly archive files automatically
 
 ## Installation
 
-Requires Go 1.24+ (project uses [mise](https://mise.jdx.dev/) to manage the Go version).
+Requires Go 1.25+ (project uses [mise](https://mise.jdx.dev/) to manage the Go version).
 
 ```bash
 git clone https://github.com/yourusername/g-tuddy
@@ -68,6 +70,8 @@ export GTD_DATA_DIR=~/Dropbox/gtd
 | Key | Action |
 |-----|--------|
 | `a` | Add task inline |
+| `P` | Process inbox (guided GTD decision tree) |
+| `enter` | Open task detail / edit view |
 | `r` | Refile as next action (→ Single Actions) |
 | `p` | Refile to a project |
 | `s` | Set someday/maybe |
@@ -79,6 +83,7 @@ export GTD_DATA_DIR=~/Dropbox/gtd
 
 | Key | Action |
 |-----|--------|
+| `enter` | Open task detail / edit view |
 | `p` | Refile to a project |
 | `s` / `w` / `d` / `x` | State changes (same as Inbox) |
 
@@ -88,14 +93,17 @@ export GTD_DATA_DIR=~/Dropbox/gtd
 |-----|--------|
 | `enter` | Open project detail |
 | `a` | Create new project |
+| `E` | Edit project metadata (title, state, tags, deadline, URL, etc.) |
 
 ### Project Detail
 
 | Key | Action |
 |-----|--------|
+| `enter` | Open task detail / edit view |
 | `a` | Add task to current sub-group |
 | `n` | Add new sub-group |
 | `d` | Mark task done |
+| `E` | Edit project metadata |
 | `ctrl+j` / `ctrl+k` | Reorder task within sub-group |
 | `m` | Move task to a different sub-group |
 | `esc` | Back to project list |
@@ -131,14 +139,15 @@ Tasks are stored as Markdown checkboxes with YAML metadata blocks:
 
 ### Task States
 
-| State | Checkbox | Meaning |
-|-------|----------|---------|
-| *(empty)* | `- [ ]` | Unprocessed inbox item |
-| `next-action` | `- [ ]` | Committed next action |
-| `waiting-for` | `- [ ]` | Delegated or blocked |
-| `some-day/maybe` | `- [ ]` | Deferred, not committed |
-| `done` | `- [x]` | Completed |
-| `canceled` | `- [-]` | Abandoned |
+| State | Checkbox | Applies to | Meaning |
+|-------|----------|------------|---------|
+| *(empty)* | `- [ ]` | Tasks | Unprocessed inbox item |
+| `next-action` | `- [ ]` | Tasks | Committed next action |
+| `active` | `- [ ]` | Projects | Project is actively being pursued |
+| `waiting-for` | `- [ ]` | Tasks & Projects | Blocked on someone or something |
+| `some-day/maybe` | `- [ ]` | Tasks & Projects | Deferred, not committed |
+| `done` | `- [x]` | Tasks & Projects | Completed |
+| `canceled` | `- [-]` | Tasks & Projects | Abandoned |
 
 ### Task Attributes
 
@@ -151,7 +160,7 @@ Tasks are stored as Markdown checkboxes with YAML metadata blocks:
 | `deadline` | When it must be done |
 | `tags` | Contexts and categories (e.g. `@computer`, `deep-work`) |
 | `url` | Link to where the work happens |
-| `delegated_to` | Who it's delegated to |
+| `waiting_on` | Who or what you're waiting on (nudged when state is `waiting-for`) |
 | `waiting_since` | Auto-set when entering `waiting-for` state |
 | notes | Free-form Markdown prose below the YAML block |
 
@@ -172,10 +181,8 @@ The data layer has 31 passing tests covering the parser, writer, and service lay
 
 ## Roadmap
 
-The core capture/organize workflow is fully functional. Planned next:
+The core capture/organize/review workflow is functional. Planned next:
 
-- **Task detail/edit view** — view and edit all task attributes from within the TUI
-- **Process Inbox mode** — guided GTD decision tree for working through inbox items one at a time
 - **Views and filtering** — text-based query DSL (`state:next-action tag:@home`, `deadline:<2026-03-07`) with saved named views
 - **Fuzzy search** — free-text search across task names, notes, and all content
 - **Weekly Review mode** — guided flow to review projects, waiting-for items, and someday/maybe
