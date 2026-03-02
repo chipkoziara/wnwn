@@ -15,3 +15,10 @@
 - Should I append timezones to my datetimes? — Decision: No. Naive local time is correct for a personal GTD app. See STATUS.md item #6.
 - I can type invalid datetimes... not a huge issue — Deferred, low priority. Date picker prevents most invalid input. See STATUS.md item #7.
 - Creating new project workflow needs more work (rename, definition of done, URL field) — Deferred as a dedicated "Project Editing" enhancement pass. See STATUS.md item #8.
+
+# Task Edits
+- When setting a task as "waiting-for" can we light up the "delegated to" field visually so users know to enter something there? Don't make it required
+
+# General Edits
+- Review default keybindings and see if there are inconsistencies and ways I can improve with better, more consistent mnemonics
+- Add setting keybindings by config.toml (set defaults in the file?)
