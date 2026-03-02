@@ -9,6 +9,7 @@ var (
 	colorMuted     = lipgloss.Color("#626262")
 	colorSuccess   = lipgloss.Color("#73F59F")
 	colorDanger    = lipgloss.Color("#FF6B6B")
+	colorWarning   = lipgloss.Color("#F4A723")
 	colorText      = lipgloss.Color("#FAFAFA")
 	colorDimText   = lipgloss.Color("#999999")
 )
@@ -88,4 +89,10 @@ var (
 			Bold(true).
 			Foreground(colorText).
 			Underline(true)
+
+	// waitingNudgeStyle highlights the delegated_to field when state is waiting-for
+	// and the field is empty, nudging the user to fill it in.
+	waitingNudgeStyle = lipgloss.NewStyle().
+				Foreground(colorWarning).
+				Bold(true)
 )

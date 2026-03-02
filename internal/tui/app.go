@@ -1905,7 +1905,14 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		}
 
 		// Label.
-		if isSelected {
+		// Pre-compute the nudge condition so the label can also be styled.
+		isDateField := f == fieldDeadline || f == fieldScheduled
+		isDelegatedToNudge := f == fieldDelegatedTo &&
+			m.detailTask.State == model.StateWaitingFor &&
+			m.fieldValue(fieldDelegatedTo) == "" && !isEditing
+		if isDelegatedToNudge {
+			b.WriteString(waitingNudgeStyle.Render(fmt.Sprintf("%-14s", label+":")))
+		} else if isSelected {
 			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("%-14s", label+":")))
 		} else {
 			b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", label+":")))
@@ -1913,9 +1920,14 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		b.WriteString(" ")
 
 		// Value or input.
-		isDateField := f == fieldDeadline || f == fieldScheduled
+		isDelegatedToNudge = f == fieldDelegatedTo &&
+			m.detailTask.State == model.StateWaitingFor &&
+			value == "" && !isEditing
 		if isEditing {
 			b.WriteString(m.input.View())
+		} else if isDelegatedToNudge {
+			// Nudge: waiting-for but no delegatee set yet.
+			b.WriteString(waitingNudgeStyle.Render("— who is this waiting on?"))
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
 			if isSelected && isDateField {
