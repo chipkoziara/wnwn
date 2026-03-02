@@ -239,6 +239,69 @@ func WithNotes(notes string) TaskOption {
 	}
 }
 
+// ── Cross-list aggregation ──────────────────────────────────────────────────
+
+// ViewTask wraps a task with its source provenance for cross-list views.
+type ViewTask struct {
+	Task      model.Task
+	Source    string // "in", "single-actions", or "projects/<filename>"
+	SgIdx     int    // sub-group index within a project; -1 for list tasks
+	Filename  string // project filename; empty for list tasks
+	ListType  model.ListType
+	IsProject bool
+}
+
+// CollectAllTasks reads inbox, single-actions, and all projects, returning
+// every active task with provenance. No filtering is applied — that is the
+// caller's responsibility. Archive files are not scanned.
+func (svc *Service) CollectAllTasks() ([]ViewTask, error) {
+	var results []ViewTask
+
+	// Inbox and single-actions.
+	for _, lt := range []model.ListType{model.ListIn, model.ListSingleActions} {
+		list, err := svc.Store.ReadList(lt)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", lt, err)
+		}
+		source := string(lt)
+		for _, task := range list.Tasks {
+			results = append(results, ViewTask{
+				Task:      task,
+				Source:    source,
+				SgIdx:     -1,
+				ListType:  lt,
+				IsProject: false,
+			})
+		}
+	}
+
+	// All projects.
+	filenames, err := svc.Store.ListProjects()
+	if err != nil {
+		return nil, fmt.Errorf("listing projects: %w", err)
+	}
+	for _, filename := range filenames {
+		proj, err := svc.Store.ReadProject(filename)
+		if err != nil {
+			return nil, fmt.Errorf("reading project %s: %w", filename, err)
+		}
+		source := "projects/" + filename
+		for sgIdx, sg := range proj.SubGroups {
+			for _, task := range sg.Tasks {
+				results = append(results, ViewTask{
+					Task:      task,
+					Source:    source,
+					SgIdx:     sgIdx,
+					Filename:  filename,
+					IsProject: true,
+				})
+			}
+		}
+	}
+
+	return results, nil
+}
+
 // WithWaitingOn sets who/what the task is waiting on and automatically sets waiting-for state.
 func WithWaitingOn(person string) TaskOption {
 	return func(task *model.Task) {
