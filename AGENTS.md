@@ -1,10 +1,10 @@
-# G-Tuddy
+# wnwn
 
 A GTD TUI app in Go. Spec in `BRD.md`. Current build status and architecture in `STATUS.md`. **Read both before starting work.**
 
 ## Project Structure
 
-- `cmd/gtd/` — entry point (TUI launch + CLI quick capture)
+- `cmd/wnwn/` — entry point (TUI launch + CLI quick capture)
 - `internal/model/` — Task, TaskList, Project, SubGroup types
 - `internal/parser/` — Markdown → model
 - `internal/writer/` — model → Markdown
@@ -44,6 +44,6 @@ Once a feature is complete and `go test ./...` passes:
 ```bash
 eval "$(mise activate bash)"
 go test ./...
-go build -o gtd ./cmd/gtd/
-GTD_DATA_DIR=/tmp/gtd-test ./gtd
+go build -o wnwn ./cmd/wnwn/
+WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```

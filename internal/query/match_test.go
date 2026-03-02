@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
+	"github.com/wnwn/wnwn/internal/model"
 )
 
 func tp(s string) *time.Time {

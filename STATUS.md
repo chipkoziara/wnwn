@@ -1,4 +1,4 @@
-# G-Tuddy Project Status
+# wnwn Project Status
 
 Last updated: 2026-03-02 (session 4)
 
@@ -24,11 +24,11 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields, handle archive-on-done/canceled, auto-set waiting_since
 	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
 
-### CLI (`cmd/gtd/main.go`)
-- `gtd` (no args): launches TUI
-- `gtd add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
-- `gtd help`: usage info
-- Data dir configurable via `GTD_DATA_DIR` env var (default: `~/.local/share/gtd`)
+### CLI (`cmd/wnwn/main.go`)
+- `wnwn` (no args): launches TUI
+- `wnwn add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
+- `wnwn help`: usage info
+- Data dir configurable via `WNWN_DATA_DIR` env var (default: `~/.local/share/wnwn`)
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:
@@ -138,7 +138,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 ### File Format
 ```
-~/.local/share/gtd/
+~/.local/share/wnwn/
   in.md                    # inbox
   single-actions.md        # standalone next actions
   projects/                # one .md file per project
@@ -180,7 +180,7 @@ Prioritized by impact:
 9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml is still deferred (see item 12 below).
 10. **Search** - Fuzzy free-text search + structured query DSL (BRD section 2, "Search"). Not started.
 11. **Weekly review mode** - Guided review flow checking projects have next actions, reviewing waiting-for items, someday/maybe cleanup (BRD section 3).
-12. **Config file** - TOML at `~/.config/gtd/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
+12. **Config file** - TOML at `~/.config/wnwn/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
 13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
@@ -244,11 +244,11 @@ eval "$(mise activate bash)"
 go test ./...
 
 # Build
-go build -o gtd ./cmd/gtd/
+go build -o wnwn ./cmd/wnwn/
 
 # Quick capture
-GTD_DATA_DIR=/tmp/gtd-test ./gtd add "Buy milk"
+WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn add "Buy milk"
 
 # Launch TUI
-GTD_DATA_DIR=/tmp/gtd-test ./gtd
+WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```

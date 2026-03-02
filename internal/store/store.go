@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
-	"github.com/g-tuddy/g-tuddy/internal/parser"
-	"github.com/g-tuddy/g-tuddy/internal/writer"
+	"github.com/wnwn/wnwn/internal/model"
+	"github.com/wnwn/wnwn/internal/parser"
+	"github.com/wnwn/wnwn/internal/writer"
 )
 
 // Store manages access to the GTD data directory.
 type Store struct {
-	// Root is the data directory path (e.g. ~/.local/share/gtd).
+	// Root is the data directory path (e.g. ~/.local/share/wnwn).
 	Root string
 }
 

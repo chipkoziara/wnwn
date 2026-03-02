@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
+	"github.com/wnwn/wnwn/internal/model"
 )
 
 // MatchAll reports whether a task satisfies all clauses (implicit AND).

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/id"
-	"github.com/g-tuddy/g-tuddy/internal/model"
+	"github.com/wnwn/wnwn/internal/id"
+	"github.com/wnwn/wnwn/internal/model"
 )
 
 // ProjectSummary is a lightweight view of a project for list display.

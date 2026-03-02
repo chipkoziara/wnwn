@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/id"
-	"github.com/g-tuddy/g-tuddy/internal/model"
-	"github.com/g-tuddy/g-tuddy/internal/store"
+	"github.com/wnwn/wnwn/internal/id"
+	"github.com/wnwn/wnwn/internal/model"
+	"github.com/wnwn/wnwn/internal/store"
 )
 
 // Service provides GTD task operations.

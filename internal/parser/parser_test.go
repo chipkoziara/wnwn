@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
-	"github.com/g-tuddy/g-tuddy/internal/writer"
+	"github.com/wnwn/wnwn/internal/model"
+	"github.com/wnwn/wnwn/internal/writer"
 )
 
 func mustTime(s string) time.Time {

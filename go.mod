@@ -1,4 +1,4 @@
-module github.com/g-tuddy/g-tuddy
+module github.com/wnwn/wnwn
 
 go 1.25.0
 

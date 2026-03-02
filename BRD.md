@@ -1,4 +1,4 @@
-# G-Tuddy: A GTD TUI App
+# wnwn: A GTD TUI App
 
 ## 1. Vision & Principles
 
@@ -64,7 +64,7 @@ Our application will have a few distinctions to make the approach more modern an
 - Ad-hoc filters can be applied on the fly and optionally saved as named views
 
 #### Saved Views
-- Named views are persisted in the `~/.config/gtd` config file
+- Named views are persisted in the `~/.config/wnwn` config file
 - Some default views ship out of the box (e.g. "Next Actions", "Waiting For", "This Week's Agenda", "Someday/Maybe")
 - Users can create, edit, and delete saved views
 
@@ -103,8 +103,8 @@ We start the app with a view on the "in" list and an easy way to add tasks quick
 - The review should track the last review date and surface a configurable reminder (e.g. "It's been 8 days since your last review")
 
 ### CLI Quick Capture
-- Users can add tasks to the inbox from any terminal without launching the TUI: `gtd add "buy milk"`
-- Supports optional inline attributes: `gtd add "buy milk" --deadline 2026-03-07 --tag @errands`
+- Users can add tasks to the inbox from any terminal without launching the TUI: `wnwn add "buy milk"`
+- Supports optional inline attributes: `wnwn add "buy milk" --deadline 2026-03-07 --tag @errands`
 - Tasks added via CLI go directly to the "in" list for later processing
 
 ## 4. Data Format Specification
@@ -353,14 +353,14 @@ Note: Bubbletea v2 uses `charm.land/*` import paths (not `github.com/charmbracel
 
 ## 6. Configuration
 
-Users should be able to edit configuration via an app-specific `~/.config/gtd/config.toml` file.
+Users should be able to edit configuration via an app-specific `~/.config/wnwn/config.toml` file.
 
 ### Configuration Scope
 The following are configurable in v1:
 - **Keybindings** — remap keyboard shortcuts to user preference
 - **Default tags** — configure which tags are seeded for new setups (contexts, action types, etc.)
 - **Theme/colors** — customize the color scheme and visual style of the TUI
-- **Data directory location** — choose where task files are stored (default: `~/.local/share/gtd` or similar)
+- **Data directory location** — choose where task files are stored (default: `~/.local/share/wnwn` or similar)
 - **Saved views** — named view definitions with their query DSL filters
 - **Review reminder settings** — configure weekly review reminder day and frequency
 

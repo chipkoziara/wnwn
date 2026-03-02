@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
+	"github.com/wnwn/wnwn/internal/model"
 	"gopkg.in/yaml.v3"
 )
 

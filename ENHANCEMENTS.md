@@ -26,6 +26,9 @@
 - Improve UX generally with more fun injected :)
 - **Explore replacing tabs with views (Option C)**: the current 4-tab system (Inbox / Actions / Projects / Views) could eventually be replaced with a fully view-based navigation where the three lists are default saved views and the "tab" concept goes away. Worth exploring in a future session once Views are battle-tested.
 
+# Project / Module Naming
+- **Align Go module path with GitHub username**: `go.mod` currently uses `github.com/wnwn/wnwn` as the module path, but the actual repo is at `github.com/chipkoziara/wnwn`. These don't need to match for a private tool (Go doesn't enforce it), but aligning them would make the codebase more conventional. Would require a find-and-replace of the module path in `go.mod` and all `.go` import statements.
+
 # Config file
 - Update where text files are stored (set the directory)
 

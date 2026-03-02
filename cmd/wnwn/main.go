@@ -10,9 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/g-tuddy/g-tuddy/internal/service"
-	"github.com/g-tuddy/g-tuddy/internal/store"
-	"github.com/g-tuddy/g-tuddy/internal/tui"
+	"github.com/wnwn/wnwn/internal/service"
+	"github.com/wnwn/wnwn/internal/store"
+	"github.com/wnwn/wnwn/internal/tui"
 )
 
 func main() {
@@ -45,20 +45,20 @@ func cmdTUI() {
 }
 
 func printUsage() {
-	fmt.Println("g-tuddy: a GTD TUI app")
+	fmt.Println("wnwn: a GTD TUI app")
 	fmt.Println()
 	fmt.Println("usage:")
-	fmt.Println("  gtd              Launch the TUI")
-	fmt.Println("  gtd <command>    Run a command")
+	fmt.Println("  wnwn              Launch the TUI")
+	fmt.Println("  wnwn <command>    Run a command")
 	fmt.Println()
 	fmt.Println("commands:")
 	fmt.Println("  add    Add a task to the inbox")
 	fmt.Println("  help   Show this help message")
 	fmt.Println()
 	fmt.Println("examples:")
-	fmt.Println("  gtd")
-	fmt.Println("  gtd add \"Buy milk\"")
-	fmt.Println("  gtd add \"Book flights\" --deadline 2026-03-15 --tag travel --tag @computer")
+	fmt.Println("  wnwn")
+	fmt.Println("  wnwn add \"Buy milk\"")
+	fmt.Println("  wnwn add \"Book flights\" --deadline 2026-03-15 --tag travel --tag @computer")
 }
 
 func cmdAdd(args []string) {
@@ -83,7 +83,7 @@ func cmdAdd(args []string) {
 	fs.Var(&tags, "tag", "Tag (can be specified multiple times)")
 
 	fs.Usage = func() {
-		fmt.Println("usage: gtd add \"task description\" [options]")
+		fmt.Println("usage: wnwn add \"task description\" [options]")
 		fmt.Println()
 		fmt.Println("options:")
 		fs.PrintDefaults()
@@ -166,10 +166,10 @@ func cmdAdd(args []string) {
 	}
 }
 
-// getDataDir returns the GTD data directory path.
-// Checks GTD_DATA_DIR env var first, falls back to ~/.local/share/gtd.
+// getDataDir returns the wnwn data directory path.
+// Checks WNWN_DATA_DIR env var first, falls back to ~/.local/share/wnwn.
 func getDataDir() string {
-	if dir := os.Getenv("GTD_DATA_DIR"); dir != "" {
+	if dir := os.Getenv("WNWN_DATA_DIR"); dir != "" {
 		return dir
 	}
 
@@ -178,7 +178,7 @@ func getDataDir() string {
 		fmt.Fprintf(os.Stderr, "error: cannot determine home directory: %v\n", err)
 		os.Exit(1)
 	}
-	return filepath.Join(home, ".local", "share", "gtd")
+	return filepath.Join(home, ".local", "share", "wnwn")
 }
 
 // parseTimeArg parses a date or datetime string from CLI arguments.
@@ -206,7 +206,7 @@ var knownFlags = map[string]bool{
 }
 
 // splitFlagsAndText separates CLI args into flag args and positional text.
-// This allows `gtd add "task text" --deadline 2026-03-15` syntax where
+// This allows `wnwn add "task text" --deadline 2026-03-15` syntax where
 // the task text comes before the flags.
 func splitFlagsAndText(args []string) (flagArgs []string, textParts []string) {
 	i := 0

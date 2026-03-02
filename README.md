@@ -1,4 +1,4 @@
-# g-tuddy
+# wnwn
 
 A GTD (Getting Things Done) TUI app built in Go. Simple, configurable, and a little quirky — because productivity software shouldn't be boring.
 
@@ -21,38 +21,38 @@ Data is stored as plain Markdown files ([File Over App](https://stephango.com/fi
 Requires Go 1.25+ (project uses [mise](https://mise.jdx.dev/) to manage the Go version).
 
 ```bash
-git clone https://github.com/yourusername/g-tuddy
-cd g-tuddy
+git clone https://github.com/yourusername/wnwn
+cd wnwn
 eval "$(mise activate bash)"   # if using mise
-go build -o gtd ./cmd/gtd/
+go build -o wnwn ./cmd/wnwn/
 ```
 
-Move `gtd` somewhere on your `$PATH`.
+Move `wnwn` somewhere on your `$PATH`.
 
 ## Usage
 
 ### Launch the TUI
 
 ```bash
-gtd
+wnwn
 ```
 
 ### Quick capture from the terminal
 
 ```bash
-gtd add "Buy milk"
-gtd add "Book flights" --deadline 2026-03-15 --tag travel --tag "@computer" --url https://flights.example.com
-gtd add "Write report" --scheduled 2026-03-10 --notes "Focus on Q1 numbers"
+wnwn add "Buy milk"
+wnwn add "Book flights" --deadline 2026-03-15 --tag travel --tag "@computer" --url https://flights.example.com
+wnwn add "Write report" --scheduled 2026-03-10 --notes "Focus on Q1 numbers"
 ```
 
 Tasks added via CLI land in your inbox for later processing.
 
 ### Configuration
 
-Set `GTD_DATA_DIR` to choose where task files are stored (default: `~/.local/share/gtd`):
+Set `WNWN_DATA_DIR` to choose where task files are stored (default: `~/.local/share/wnwn`):
 
 ```bash
-export GTD_DATA_DIR=~/Dropbox/gtd
+export WNWN_DATA_DIR=~/Dropbox/wnwn
 ```
 
 ## Keyboard Shortcuts
@@ -128,7 +128,7 @@ Tasks are stored as Markdown checkboxes with YAML metadata blocks:
 ### Data Directory Layout
 
 ```
-~/.local/share/gtd/
+~/.local/share/wnwn/
   in.md                  # inbox
   single-actions.md      # standalone next actions
   projects/              # one .md file per project
@@ -171,10 +171,10 @@ Tasks are stored as Markdown checkboxes with YAML metadata blocks:
 go test ./...
 
 # Build
-go build -o gtd ./cmd/gtd/
+go build -o wnwn ./cmd/wnwn/
 
 # Test with a throwaway data directory
-GTD_DATA_DIR=/tmp/gtd-test ./gtd
+WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```
 
 The data layer has 31 passing tests covering the parser, writer, and service layer.
@@ -186,7 +186,7 @@ The core capture/organize/review workflow is functional. Planned next:
 - **Views and filtering** — text-based query DSL (`state:next-action tag:@home`, `deadline:<2026-03-07`) with saved named views
 - **Fuzzy search** — free-text search across task names, notes, and all content
 - **Weekly Review mode** — guided flow to review projects, waiting-for items, and someday/maybe
-- **Config file** — `~/.config/gtd/config.toml` for keybindings, themes, default tags, saved views
+- **Config file** — `~/.config/wnwn/config.toml` for keybindings, themes, default tags, saved views
 - **Tickler File** — skeuomorphic 43-folder visualization (31 days + 12 months) over the agenda view
 
 ## Tech Stack

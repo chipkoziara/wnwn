@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
-	"github.com/g-tuddy/g-tuddy/internal/store"
+	"github.com/wnwn/wnwn/internal/model"
+	"github.com/wnwn/wnwn/internal/store"
 )
 
 func setupTestStore(t *testing.T) *store.Store {

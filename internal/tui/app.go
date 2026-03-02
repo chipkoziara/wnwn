@@ -1,4 +1,4 @@
-// Package tui implements the Bubbletea terminal user interface for g-tuddy.
+// Package tui implements the Bubbletea terminal user interface for wnwn.
 package tui
 
 import (
@@ -9,11 +9,11 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/g-tuddy/g-tuddy/internal/model"
-	"github.com/g-tuddy/g-tuddy/internal/query"
-	"github.com/g-tuddy/g-tuddy/internal/service"
-	"github.com/g-tuddy/g-tuddy/internal/store"
-	"github.com/g-tuddy/g-tuddy/internal/tui/datepicker"
+	"github.com/wnwn/wnwn/internal/model"
+	"github.com/wnwn/wnwn/internal/query"
+	"github.com/wnwn/wnwn/internal/service"
+	"github.com/wnwn/wnwn/internal/store"
+	"github.com/wnwn/wnwn/internal/tui/datepicker"
 )
 
 // mode represents the current UI mode.
