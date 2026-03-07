@@ -2,19 +2,19 @@
 
 A GTD (Getting Things Done) TUI app built in Go. Simple, configurable, and a little quirky — because productivity software shouldn't be boring.
 
-Data is stored as plain Markdown files ([File Over App](https://stephango.com/file-over-app) philosophy). No proprietary database lock-in.
+Runtime data is stored in SQLite, with first-class Markdown import/export for portability and backup.
 
 ## Features
 
 - **Three-tab TUI** — Inbox, Single Actions, Projects
 - **Full GTD workflow** — capture, process, organize, review
 - **CLI quick capture** — add tasks from any terminal without opening the TUI
-- **Plain Markdown storage** — human-readable files you can edit with any text editor
+- **SQLite runtime + Markdown interchange** — fast local storage with portable plain-text import/export
 - **GTD contexts via tags** — `@home`, `@computer`, `@errands`, etc.
 - **Project sub-groups** — organize large projects into named phases or milestones
 - **Project editing** — rename projects (auto-renames the file), set state, deadline, URL, definition of done, and waiting-on
 - **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
-- **Auto-archiving** — done/canceled tasks move to monthly archive files automatically
+- **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
 
 ## Installation
 
@@ -76,7 +76,8 @@ export WNWN_DATA_DIR=~/Dropbox/wnwn
 | `p` | Refile to a project |
 | `s` | Set someday/maybe |
 | `w` | Set waiting-for |
-| `d` | Mark done (archives) |
+| `d` | Mark done (stays in list) |
+| `A` | Archive selected task |
 | `x` | Trash (permanent delete) |
 
 ### Single Actions
@@ -86,6 +87,7 @@ export WNWN_DATA_DIR=~/Dropbox/wnwn
 | `enter` | Open task detail / edit view |
 | `p` | Refile to a project |
 | `s` / `w` / `d` / `x` | State changes (same as Inbox) |
+| `A` | Archive selected task |
 
 ### Projects
 
@@ -103,6 +105,7 @@ export WNWN_DATA_DIR=~/Dropbox/wnwn
 | `a` | Add task to current sub-group |
 | `n` | Add new sub-group |
 | `d` | Mark task done |
+| `A` | Archive selected task |
 | `E` | Edit project metadata |
 | `ctrl+j` / `ctrl+k` | Reorder task within sub-group |
 | `m` | Move task to a different sub-group |

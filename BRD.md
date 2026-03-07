@@ -119,7 +119,9 @@ We adhere to "File Over App" where the tasks and projects should all be stored i
 - Each task has a stable ULID (Universally Unique Lexicographically Sortable Identifier) embedded in its metadata, used for SQLite indexing and cross-references
 
 ### Archiving
-- When a task is marked `done` or `canceled`, it is moved from its source file to the archive directory
+- Marking a task `done` or `canceled` does **not** auto-archive by default; it remains in its current list/project until explicitly archived
+- Users archive tasks via an explicit archive action in the UI/CLI
+- Future configuration may allow enabling auto-archive behavior for users who prefer it
 - Archive files are organized by month: `archive/2026-03.md`, `archive/2026-04.md`, etc.
 - Each archived task includes a `source` field in its metadata indicating where it came from (e.g. `source: single-actions`, `source: projects/launch-website`)
 - Archived tasks are still searchable and visible in views via the query DSL

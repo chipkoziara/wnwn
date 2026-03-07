@@ -646,6 +646,15 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadCurrentList
 		}
 
+	// Archive task.
+	case "A":
+		if m.list != nil && len(m.list.Tasks) > 0 {
+			task := m.list.Tasks[m.cursor]
+			_ = m.svc.ArchiveTask(m.list.Type, task.ID)
+			m.statusMsg = "Task archived"
+			return m, tea.Batch(m.loadCurrentList, m.clearStatusAfter())
+		}
+
 	// Trash task.
 	case "x":
 		if m.list != nil && len(m.list.Tasks) > 0 {
@@ -923,7 +932,7 @@ func (m Model) updateProcessStepEnrichTags(msg tea.KeyPressMsg) (tea.Model, tea.
 func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "d":
-		// Done (< 2 min, did it). Persist enrichment + mark done (auto-archives).
+		// Done (< 2 min, did it). Persist enrichment + mark done.
 		task := m.processTask
 		return m, func() tea.Msg {
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
@@ -1196,6 +1205,17 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if item.isTask {
 				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone)
 				return m, m.reloadProjectDetail()
+			}
+		}
+
+	case "A":
+		// Archive selected project task.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				_ = m.svc.ArchiveProjectTask(m.activeFilename, item.sgIdx, item.task.ID)
+				m.statusMsg = "Task archived"
+				return m, tea.Batch(m.reloadProjectDetail(), m.clearStatusAfter())
 			}
 		}
 
@@ -2727,7 +2747,7 @@ func (m Model) helpText() string {
 		return "enter: open view  /: ad-hoc query  j/k: navigate  1-4/tab: switch tab  q: quit"
 	}
 	if m.view == viewViewResults {
-		return "enter: task detail  d: done  s: someday  w: waiting  x: trash  R: refresh  esc: back  j/k: navigate"
+		return "enter: task detail  d: done  s: someday  w: waiting  A: archive  x: trash  R: refresh  esc: back  j/k: navigate"
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -2736,12 +2756,12 @@ func (m Model) helpText() string {
 	case viewProjects:
 		return "enter: open  a: new project  E: edit project  " + nav
 	case viewProjectDetail:
-		return "enter: detail  a: add task  n: new sub-group  d: done  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
+		return "enter: detail  a: add task  n: new sub-group  d: done  A: archive  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
-			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
+			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  A: archive  x: trash  " + nav
 		}
-		return "enter: detail  p: to project  s: someday  w: waiting  d: done  x: trash  " + nav
+		return "enter: detail  p: to project  s: someday  w: waiting  d: done  A: archive  x: trash  " + nav
 	}
 }
 
@@ -3204,6 +3224,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		return m, m.viewResultTrash()
 
+	case "A":
+		return m, m.viewResultArchive()
+
 	case "1":
 		m.view = viewList
 		m.currentList = model.ListIn
@@ -3283,6 +3306,39 @@ func (m Model) viewResultTrash() tea.Cmd {
 			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, model.StateCanceled)
 		} else {
 			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		clauses, _ := query.Parse(queryStr, time.Now())
+		all, err2 := m.svc.CollectAllTasks()
+		if err2 != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err2}
+		}
+		var filtered []service.ViewTask
+		for _, v := range all {
+			if query.MatchAll(clauses, v.Task, v.Source) {
+				filtered = append(filtered, v)
+			}
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+	}
+}
+
+// viewResultArchive archives the selected view result task.
+func (m Model) viewResultArchive() tea.Cmd {
+	if len(m.viewResults) == 0 {
+		return nil
+	}
+	vt := m.viewResults[m.viewCursor]
+	name := m.activeViewName
+	queryStr := m.activeViewQuery
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
+		} else {
+			err = m.svc.ArchiveTask(vt.ListType, vt.Task.ID)
 		}
 		if err != nil {
 			return errMsg{err}

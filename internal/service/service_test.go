@@ -165,7 +165,7 @@ func TestUpdateStateWaitingFor(t *testing.T) {
 	}
 }
 
-func TestUpdateStateDoneArchives(t *testing.T) {
+func TestUpdateStateDoneStaysInList(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)
 
@@ -180,22 +180,51 @@ func TestUpdateStateDoneArchives(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Mark done — should archive and remove from list.
+	// Mark done — should stay in list until explicitly archived.
 	err = svc.UpdateState(model.ListSingleActions, task.ID, model.StateDone)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Single actions should be empty.
+	// Single actions should still contain the task.
+	sa, err := s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sa.Tasks) != 1 {
+		t.Fatalf("single-actions has %d tasks, want 1", len(sa.Tasks))
+	}
+	if sa.Tasks[0].State != model.StateDone {
+		t.Errorf("state = %q, want done", sa.Tasks[0].State)
+	}
+}
+
+func TestArchiveTask(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	task, err := svc.AddToInbox("Archive me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = svc.ArchiveTask(model.ListSingleActions, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	sa, err := s.ReadList(model.ListSingleActions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sa.Tasks) != 0 {
-		t.Errorf("single-actions has %d tasks, want 0", len(sa.Tasks))
+		t.Fatalf("single-actions has %d tasks, want 0", len(sa.Tasks))
 	}
 
-	// Archive should have the task.
 	archiveFile := time.Now().Format("2006-01") + ".md"
 	archive, err := s.ReadArchive(archiveFile)
 	if err != nil {
@@ -204,8 +233,8 @@ func TestUpdateStateDoneArchives(t *testing.T) {
 	if len(archive.Tasks) != 1 {
 		t.Fatalf("archive has %d tasks, want 1", len(archive.Tasks))
 	}
-	if archive.Tasks[0].State != model.StateDone {
-		t.Errorf("archived state = %q", archive.Tasks[0].State)
+	if archive.Tasks[0].ID != task.ID {
+		t.Errorf("archived ID = %q, want %q", archive.Tasks[0].ID, task.ID)
 	}
 	if archive.Tasks[0].Source != "single-actions" {
 		t.Errorf("archived source = %q, want single-actions", archive.Tasks[0].Source)

@@ -50,7 +50,6 @@ func (svc *Service) AddToInbox(text string, opts ...TaskOption) (*model.Task, er
 
 // UpdateState changes a task's state within a list.
 // If the new state is "waiting-for", it auto-sets WaitingSince.
-// If the new state is "done" or "canceled", it archives the task.
 func (svc *Service) UpdateState(listType model.ListType, taskID string, newState model.TaskState) error {
 	list, err := svc.Store.ReadList(listType)
 	if err != nil {
@@ -68,15 +67,6 @@ func (svc *Service) UpdateState(listType model.ListType, taskID string, newState
 	if newState == model.StateWaitingFor && task.WaitingSince == nil {
 		now := time.Now().Truncate(24 * time.Hour)
 		task.WaitingSince = &now
-	}
-
-	// If done or canceled, archive and remove from list.
-	if newState == model.StateDone || newState == model.StateCanceled {
-		task.Source = string(listType)
-		if err := svc.archiveTask(*task); err != nil {
-			return fmt.Errorf("archiving task: %w", err)
-		}
-		list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
 	}
 
 	return svc.Store.WriteList(list)
@@ -121,7 +111,6 @@ func (svc *Service) MoveToList(fromList model.ListType, taskID string, toList mo
 // UpdateTask replaces all mutable fields of a task within a list.
 // The task is identified by ID; ID, Created, and Source are never changed.
 // If the new state is "waiting-for" and WaitingSince is not yet set, it is auto-set.
-// If the new state is "done" or "canceled", the task is archived and removed.
 func (svc *Service) UpdateTask(listType model.ListType, updated model.Task) error {
 	list, err := svc.Store.ReadList(listType)
 	if err != nil {
@@ -145,15 +134,28 @@ func (svc *Service) UpdateTask(listType model.ListType, updated model.Task) erro
 
 	list.Tasks[idx] = updated
 
-	// Archive if done or canceled.
-	if updated.State == model.StateDone || updated.State == model.StateCanceled {
-		list.Tasks[idx].Source = string(listType)
-		if err := svc.archiveTask(list.Tasks[idx]); err != nil {
-			return fmt.Errorf("archiving task: %w", err)
-		}
-		list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
+	return svc.Store.WriteList(list)
+}
+
+// ArchiveTask moves a task from a list into the monthly archive file.
+func (svc *Service) ArchiveTask(listType model.ListType, taskID string) error {
+	list, err := svc.Store.ReadList(listType)
+	if err != nil {
+		return fmt.Errorf("reading list: %w", err)
 	}
 
+	idx := findTaskIndex(list.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in %s", taskID, listType)
+	}
+
+	task := list.Tasks[idx]
+	task.Source = string(listType)
+	if err := svc.archiveTask(task); err != nil {
+		return fmt.Errorf("archiving task: %w", err)
+	}
+
+	list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
 	return svc.Store.WriteList(list)
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/wnwn/wnwn/internal/model"
 )
@@ -188,7 +189,7 @@ func TestMoveToProject(t *testing.T) {
 	}
 }
 
-func TestUpdateProjectTaskStateDone(t *testing.T) {
+func TestUpdateProjectTaskStateDoneStaysInProject(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)
 
@@ -202,7 +203,7 @@ func TestUpdateProjectTaskStateDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Mark done — should archive and remove from project.
+	// Mark done — should stay in project until explicitly archived.
 	err = svc.UpdateProjectTaskState("my-project.md", 0, task.ID, model.StateDone)
 	if err != nil {
 		t.Fatal(err)
@@ -212,8 +213,51 @@ func TestUpdateProjectTaskStateDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(proj.SubGroups[0].Tasks) != 1 {
+		t.Fatalf("project has %d tasks, want 1", len(proj.SubGroups[0].Tasks))
+	}
+	if proj.SubGroups[0].Tasks[0].State != model.StateDone {
+		t.Errorf("state = %q, want done", proj.SubGroups[0].Tasks[0].State)
+	}
+}
+
+func TestArchiveProjectTask(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := svc.AddTaskToProject("my-project.md", 0, "Archive this project task", model.StateDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = svc.ArchiveProjectTask("my-project.md", 0, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := s.ReadProject("my-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(proj.SubGroups[0].Tasks) != 0 {
-		t.Errorf("project still has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
+		t.Fatalf("project has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
+	}
+
+	archiveFile := time.Now().Format("2006-01") + ".md"
+	archive, err := s.ReadArchive(archiveFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.Tasks) != 1 {
+		t.Fatalf("archive has %d tasks, want 1", len(archive.Tasks))
+	}
+	if archive.Tasks[0].Source != "projects/my-project.md" {
+		t.Errorf("archived source = %q", archive.Tasks[0].Source)
 	}
 }
 

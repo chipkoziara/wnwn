@@ -204,7 +204,6 @@ func (svc *Service) MoveToProject(fromList model.ListType, taskID string, projec
 }
 
 // UpdateProjectTaskState changes a task's state within a project.
-// If done/canceled, the task is archived and removed from the project.
 func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, taskID string, newState model.TaskState) error {
 	proj, err := svc.Store.ReadProject(filename)
 	if err != nil {
@@ -229,20 +228,11 @@ func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, tas
 		task.WaitingSince = &now
 	}
 
-	if newState == model.StateDone || newState == model.StateCanceled {
-		task.Source = fmt.Sprintf("projects/%s", filename)
-		if err := svc.archiveTask(*task); err != nil {
-			return fmt.Errorf("archiving task: %w", err)
-		}
-		sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
-	}
-
 	return svc.Store.WriteProject(proj)
 }
 
 // UpdateProjectTask replaces all mutable fields of a task within a project sub-group.
 // ID, Created, and Source are never changed.
-// If the new state is "done" or "canceled", the task is archived and removed.
 func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated model.Task) error {
 	proj, err := svc.Store.ReadProject(filename)
 	if err != nil {
@@ -271,15 +261,33 @@ func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated 
 
 	sg.Tasks[idx] = updated
 
-	// Archive if done or canceled.
-	if updated.State == model.StateDone || updated.State == model.StateCanceled {
-		sg.Tasks[idx].Source = fmt.Sprintf("projects/%s", filename)
-		if err := svc.archiveTask(sg.Tasks[idx]); err != nil {
-			return fmt.Errorf("archiving task: %w", err)
-		}
-		sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
+// ArchiveProjectTask moves a task from a project sub-group into monthly archive.
+func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
 	}
 
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+
+	sg := &proj.SubGroups[subGroupIdx]
+	idx := findTaskIndex(sg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	task := sg.Tasks[idx]
+	task.Source = fmt.Sprintf("projects/%s", filename)
+	if err := svc.archiveTask(task); err != nil {
+		return fmt.Errorf("archiving task: %w", err)
+	}
+
+	sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
 	return svc.Store.WriteProject(proj)
 }
 

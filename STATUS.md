@@ -1,14 +1,14 @@
 # wnwn Project Status
 
-Last updated: 2026-03-07 (session 5)
+Last updated: 2026-03-07 (session 6)
 
 ## What This Is
 
-A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, and Bubbles v2. The spec is in `BRD.md`. Data is stored as Markdown files ("File Over App" philosophy).
+A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, and Bubbles v2. The spec is in `BRD.md`. SQLite is the runtime data store, with Markdown import/export for portability.
 
 ## What's Built
 
-### Data Layer (fully working, 82 tests passing)
+### Data Layer (fully working, 84 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -20,11 +20,12 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 - **Store** (`internal/store/`): Persistence abstraction over the SQLite runtime backend plus Markdown interchange adapter. Supports read/write for lists, projects, and archives, with slugified project filenames.
 - **Service** (`internal/service/`): GTD business logic:
   - Inbox: add tasks with functional options (WithDeadline, WithTags, etc.)
-  - State transitions: auto-sets waiting_since, auto-archives done/canceled
+  - State transitions: auto-sets waiting_since. done/canceled now stay in place by default.
+  - Explicit archiving: `ArchiveTask` (list tasks) and `ArchiveProjectTask` (project tasks) move items to monthly archives on demand.
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
 	- Archiving: monthly archive files with source tracking
-	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields, handle archive-on-done/canceled, auto-set waiting_since
+	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields and auto-set waiting_since when entering waiting-for
 	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
 
 ### CLI (`cmd/wnwn/main.go`)
@@ -54,7 +55,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `p`: refile to a project (opens project picker)
 - `s`: set someday/maybe (refiles from inbox)
 - `w`: set waiting-for (refiles from inbox)
-- `d`: mark done (archives)
+- `d`: mark done (stays in list)
+- `A`: archive selected task
 - `x`: trash (permanent delete)
 
 **Process Inbox mode** (`P` from inbox):
@@ -73,6 +75,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 **Single Actions view:**
 - `p`: refile to a project
 - `s`/`w`/`d`/`x`: state changes (same as inbox but updates in-place)
+- `A`: archive selected task
 
 **Projects list view:**
 - Shows all projects with state, task count, deadline, next action preview
@@ -85,6 +88,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `d`: mark task done
+- `A`: archive selected task
 - `E`: open project edit view (edit metadata)
 - `ctrl+j`/`ctrl+k`: reorder task within sub-group (cursor follows)
 - `m`: move task to a different sub-group (picker)
@@ -106,6 +110,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `j`/`k`/`g`/`G`: navigate results
 - `enter`: open task detail (full edit; esc/save returns to view results and refreshes)
 - `d`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
+- `A`: archive selected task (source-aware); view refreshes automatically
 - `x`: trash (list tasks) or cancel (project tasks); view refreshes
 - `R`: manual refresh (re-collect and re-filter)
 - `esc`: back to view list
@@ -193,7 +198,7 @@ Prioritized by impact:
 14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (82 total: 8 parser + 42 query + 27 service + 3 writer/parser roundtrip + 2 sqlite store).
+- None currently open. All tests pass (84 total: 8 parser + 42 query + 29 service + 3 writer/parser roundtrip + 2 sqlite store).
 
 ---
 
