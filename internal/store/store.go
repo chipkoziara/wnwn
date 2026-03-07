@@ -1,219 +1,131 @@
-// Package store provides file-system operations for reading and writing
-// GTD data files. It manages the data directory layout and provides
-// atomic read/write operations for list and project files.
+// Package store provides backend-agnostic persistence for wnwn.
 package store
 
 import (
-	"fmt"
+	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/parser"
-	"github.com/wnwn/wnwn/internal/writer"
 )
 
-// Store manages access to the GTD data directory.
+// BackendType identifies the persistence implementation.
+type BackendType string
+
+const (
+	BackendMarkdown BackendType = "markdown"
+	BackendSQLite   BackendType = "sqlite"
+)
+
+// ErrUnknownBackend is returned when a backend name is not supported.
+var ErrUnknownBackend = errors.New("unknown backend")
+
+// BackendFromString parses a backend name.
+func BackendFromString(s string) (BackendType, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	switch BackendType(s) {
+	case BackendMarkdown:
+		return BackendMarkdown, nil
+	case BackendSQLite:
+		return BackendSQLite, nil
+	default:
+		return "", ErrUnknownBackend
+	}
+}
+
+// BackendFromEnv returns the selected backend from WNWN_BACKEND.
+// Defaults to sqlite when unset.
+func BackendFromEnv() BackendType {
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("WNWN_BACKEND")))
+	if raw == "" {
+		return BackendSQLite
+	}
+	b, err := BackendFromString(raw)
+	if err != nil {
+		return BackendSQLite
+	}
+	return b
+}
+
+type driver interface {
+	Init() error
+	ReadList(lt model.ListType) (*model.TaskList, error)
+	WriteList(list *model.TaskList) error
+	ReadProject(filename string) (*model.Project, error)
+	WriteProject(proj *model.Project) error
+	RenameProject(oldFilename string, proj *model.Project) (string, error)
+	ListProjects() ([]string, error)
+	ReadArchive(filename string) (*model.TaskList, error)
+	WriteArchive(filename string, list *model.TaskList) error
+	ListArchives() ([]string, error)
+}
+
+// Store manages access to persisted GTD data.
 type Store struct {
-	// Root is the data directory path (e.g. ~/.local/share/wnwn).
-	Root string
+	Root    string
+	Backend BackendType
+	driver  driver
 }
 
 // New creates a Store rooted at the given directory.
+// Uses Markdown backend for backwards compatibility in tests and tools.
 func New(root string) *Store {
-	return &Store{Root: root}
+	return NewWithBackend(root, BackendMarkdown)
 }
 
-// Init creates the data directory structure if it doesn't exist,
-// including empty default files.
-func (s *Store) Init() error {
-	dirs := []string{
-		s.Root,
-		filepath.Join(s.Root, "projects"),
-		filepath.Join(s.Root, "archive"),
-	}
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("creating directory %s: %w", dir, err)
-		}
-	}
-
-	// Create default list files if they don't exist.
-	defaults := map[string]*model.TaskList{
-		"in.md": {
-			Title: "Inbox",
-			Type:  model.ListIn,
-		},
-		"single-actions.md": {
-			Title: "Single Actions",
-			Type:  model.ListSingleActions,
-		},
-	}
-
-	for filename, list := range defaults {
-		path := filepath.Join(s.Root, filename)
-		if _, err := os.Stat(path); err == nil {
-			continue // file already exists
-		}
-		f, err := os.Create(path)
-		if err != nil {
-			return fmt.Errorf("creating %s: %w", filename, err)
-		}
-		if err := writer.WriteTaskList(f, list); err != nil {
-			f.Close()
-			return fmt.Errorf("writing %s: %w", filename, err)
-		}
-		f.Close()
-	}
-
-	return nil
+// NewWithBackend creates a Store with an explicit backend.
+func NewWithBackend(root string, backend BackendType) *Store {
+	s := &Store{Root: root, Backend: backend}
+	s.driver = newDriver(root, backend)
+	return s
 }
 
-// listPath returns the file path for a given list type.
-func (s *Store) listPath(lt model.ListType) string {
-	switch lt {
-	case model.ListIn:
-		return filepath.Join(s.Root, "in.md")
-	case model.ListSingleActions:
-		return filepath.Join(s.Root, "single-actions.md")
+func newDriver(root string, backend BackendType) driver {
+	switch backend {
+	case BackendSQLite:
+		return newSQLiteStore(root)
 	default:
-		return filepath.Join(s.Root, string(lt)+".md")
+		return newMarkdownStore(root)
 	}
 }
 
-// ReadList reads and parses a list file.
-func (s *Store) ReadList(lt model.ListType) (*model.TaskList, error) {
-	path := s.listPath(lt)
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
-	}
-	defer f.Close()
+// Init initializes the selected backend storage.
+func (s *Store) Init() error { return s.driver.Init() }
 
-	list, err := parser.ParseTaskList(f)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return list, nil
-}
+// ReadList reads a list.
+func (s *Store) ReadList(lt model.ListType) (*model.TaskList, error) { return s.driver.ReadList(lt) }
 
-// WriteList writes a task list back to its file, overwriting the existing content.
-func (s *Store) WriteList(list *model.TaskList) error {
-	path := s.listPath(list.Type)
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	defer f.Close()
+// WriteList writes a list.
+func (s *Store) WriteList(list *model.TaskList) error { return s.driver.WriteList(list) }
 
-	if err := writer.WriteTaskList(f, list); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return nil
-}
-
-// ReadProject reads and parses a project file.
+// ReadProject reads a project by filename.
 func (s *Store) ReadProject(filename string) (*model.Project, error) {
-	path := filepath.Join(s.Root, "projects", filename)
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
-	}
-	defer f.Close()
-
-	proj, err := parser.ParseProject(f)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return proj, nil
+	return s.driver.ReadProject(filename)
 }
 
-// WriteProject writes a project back to its file.
-func (s *Store) WriteProject(proj *model.Project) error {
-	filename := Slugify(proj.Title) + ".md"
-	path := filepath.Join(s.Root, "projects", filename)
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	defer f.Close()
+// WriteProject writes a project.
+func (s *Store) WriteProject(proj *model.Project) error { return s.driver.WriteProject(proj) }
 
-	if err := writer.WriteProject(f, proj); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return nil
-}
-
-// RenameProject writes the project with the new title (which determines the new filename
-// via Slugify) and removes the old file. Returns the new filename.
-// If oldFilename already matches the new slug, only the content is rewritten.
+// RenameProject updates a project title/filename.
 func (s *Store) RenameProject(oldFilename string, proj *model.Project) (string, error) {
-	newFilename := Slugify(proj.Title) + ".md"
-
-	// Write to new path (WriteProject derives filename from proj.Title).
-	if err := s.WriteProject(proj); err != nil {
-		return "", fmt.Errorf("writing renamed project: %w", err)
-	}
-
-	// Remove old file if the name changed.
-	if oldFilename != newFilename {
-		oldPath := filepath.Join(s.Root, "projects", oldFilename)
-		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
-			return newFilename, fmt.Errorf("removing old project file: %w", err)
-		}
-	}
-
-	return newFilename, nil
+	return s.driver.RenameProject(oldFilename, proj)
 }
 
-// ListProjects returns the filenames of all project files.
-func (s *Store) ListProjects() ([]string, error) {
-	dir := filepath.Join(s.Root, "projects")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("reading projects dir: %w", err)
-	}
+// ListProjects lists project filenames.
+func (s *Store) ListProjects() ([]string, error) { return s.driver.ListProjects() }
 
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
-			names = append(names, e.Name())
-		}
-	}
-	return names, nil
-}
-
-// ReadArchive reads an archive file by its filename (e.g. "2026-03.md").
+// ReadArchive reads an archive list.
 func (s *Store) ReadArchive(filename string) (*model.TaskList, error) {
-	path := filepath.Join(s.Root, "archive", filename)
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
-	}
-	defer f.Close()
-
-	list, err := parser.ParseTaskList(f)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return list, nil
+	return s.driver.ReadArchive(filename)
 }
 
-// WriteArchive writes an archive list to its file.
+// WriteArchive writes an archive list.
 func (s *Store) WriteArchive(filename string, list *model.TaskList) error {
-	path := filepath.Join(s.Root, "archive", filename)
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("creating %s: %w", path, err)
-	}
-	defer f.Close()
-
-	if err := writer.WriteTaskList(f, list); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return nil
+	return s.driver.WriteArchive(filename, list)
 }
+
+// ListArchives lists archive filenames.
+func (s *Store) ListArchives() ([]string, error) { return s.driver.ListArchives() }
 
 // Slugify converts a title to a filename-safe slug.
 // e.g. "Launch Website" -> "launch-website"

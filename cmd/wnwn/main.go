@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/wnwn/wnwn/internal/model"
 	"github.com/wnwn/wnwn/internal/service"
 	"github.com/wnwn/wnwn/internal/store"
 	"github.com/wnwn/wnwn/internal/tui"
@@ -25,6 +26,10 @@ func main() {
 	switch os.Args[1] {
 	case "add":
 		cmdAdd(os.Args[2:])
+	case "export-md":
+		cmdExportMarkdown(os.Args[2:])
+	case "import-md":
+		cmdImportMarkdown(os.Args[2:])
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -36,7 +41,7 @@ func main() {
 
 func cmdTUI() {
 	dataDir := getDataDir()
-	m := tui.New(dataDir)
+	m := tui.New(dataDir, store.BackendFromEnv())
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -53,12 +58,16 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("commands:")
 	fmt.Println("  add    Add a task to the inbox")
+	fmt.Println("  export-md   Export current data to Markdown")
+	fmt.Println("  import-md   Import Markdown data into current backend")
 	fmt.Println("  help   Show this help message")
 	fmt.Println()
 	fmt.Println("examples:")
 	fmt.Println("  wnwn")
 	fmt.Println("  wnwn add \"Buy milk\"")
 	fmt.Println("  wnwn add \"Book flights\" --deadline 2026-03-15 --tag travel --tag @computer")
+	fmt.Println("  wnwn export-md --out /tmp/wnwn-export")
+	fmt.Println("  wnwn import-md --from /tmp/wnwn-export")
 }
 
 func cmdAdd(args []string) {
@@ -140,7 +149,8 @@ func cmdAdd(args []string) {
 
 	// Initialize store and service.
 	dataDir := getDataDir()
-	s := store.New(dataDir)
+	backend := store.BackendFromEnv()
+	s := store.NewWithBackend(dataDir, backend)
 	if err := s.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing data directory: %v\n", err)
 		os.Exit(1)
@@ -164,6 +174,116 @@ func cmdAdd(args []string) {
 	if len(task.Tags) > 0 {
 		fmt.Printf("  tags: %s\n", strings.Join(task.Tags, ", "))
 	}
+}
+
+func cmdExportMarkdown(args []string) {
+	fs := flag.NewFlagSet("export-md", flag.ExitOnError)
+	var outDir string
+	fs.StringVar(&outDir, "out", "", "Output directory for markdown export")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+	if strings.TrimSpace(outDir) == "" {
+		fmt.Fprintln(os.Stderr, "error: --out is required")
+		os.Exit(1)
+	}
+
+	dataDir := getDataDir()
+	backend := store.BackendFromEnv()
+	src := store.NewWithBackend(dataDir, backend)
+	if err := src.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: initializing source backend: %v\n", err)
+		os.Exit(1)
+	}
+
+	dst := store.NewWithBackend(outDir, store.BackendMarkdown)
+	if err := dst.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: initializing markdown destination: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := copyAllData(src, dst); err != nil {
+		fmt.Fprintf(os.Stderr, "error: exporting markdown: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Exported data to Markdown: %s\n", outDir)
+}
+
+func cmdImportMarkdown(args []string) {
+	fs := flag.NewFlagSet("import-md", flag.ExitOnError)
+	var fromDir string
+	fs.StringVar(&fromDir, "from", "", "Source markdown directory")
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+	if strings.TrimSpace(fromDir) == "" {
+		fmt.Fprintln(os.Stderr, "error: --from is required")
+		os.Exit(1)
+	}
+
+	dataDir := getDataDir()
+	backend := store.BackendFromEnv()
+	src := store.NewWithBackend(fromDir, store.BackendMarkdown)
+	if err := src.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: initializing markdown source: %v\n", err)
+		os.Exit(1)
+	}
+
+	dst := store.NewWithBackend(dataDir, backend)
+	if err := dst.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: initializing destination backend: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := copyAllData(src, dst); err != nil {
+		fmt.Fprintf(os.Stderr, "error: importing markdown: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Imported Markdown data from: %s\n", fromDir)
+}
+
+func copyAllData(src *store.Store, dst *store.Store) error {
+	for _, lt := range []model.ListType{model.ListIn, model.ListSingleActions} {
+		list, err := src.ReadList(lt)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", lt, err)
+		}
+		if err := dst.WriteList(list); err != nil {
+			return fmt.Errorf("writing %s: %w", lt, err)
+		}
+	}
+
+	projects, err := src.ListProjects()
+	if err != nil {
+		return fmt.Errorf("listing projects: %w", err)
+	}
+	for _, filename := range projects {
+		proj, err := src.ReadProject(filename)
+		if err != nil {
+			return fmt.Errorf("reading project %s: %w", filename, err)
+		}
+		if err := dst.WriteProject(proj); err != nil {
+			return fmt.Errorf("writing project %s: %w", filename, err)
+		}
+	}
+
+	archives, err := src.ListArchives()
+	if err != nil {
+		return fmt.Errorf("listing archives: %w", err)
+	}
+	for _, filename := range archives {
+		archive, err := src.ReadArchive(filename)
+		if err != nil {
+			return fmt.Errorf("reading archive %s: %w", filename, err)
+		}
+		if err := dst.WriteArchive(filename, archive); err != nil {
+			return fmt.Errorf("writing archive %s: %w", filename, err)
+		}
+	}
+
+	return nil
 }
 
 // getDataDir returns the wnwn data directory path.

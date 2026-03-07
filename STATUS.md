@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-02 (session 4)
+Last updated: 2026-03-07 (session 5)
 
 ## What This Is
 
@@ -8,8 +8,13 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 80 tests passing)
+### Data Layer (fully working, 82 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
+- **Pluggable persistence backend** (`internal/store/`): `Store` now delegates to backend drivers with a shared API. Available backends:
+  - `markdown` (legacy file backend; still supported)
+  - `sqlite` (new relational backend, default at runtime via `WNWN_BACKEND`)
+  - SQLite schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
+  - Added `ListArchives()` to the store API to support full backend-to-backend migration/export flows.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
@@ -27,8 +32,11 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 ### CLI (`cmd/wnwn/main.go`)
 - `wnwn` (no args): launches TUI
 - `wnwn add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
+- `wnwn export-md --out DIR`: exports current backend data to Markdown files
+- `wnwn import-md --from DIR`: imports Markdown files into the current backend
 - `wnwn help`: usage info
 - Data dir configurable via `WNWN_DATA_DIR` env var (default: `~/.local/share/wnwn`)
+- Backend configurable via `WNWN_BACKEND` env var (`sqlite` default, `markdown` supported)
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:
@@ -185,7 +193,7 @@ Prioritized by impact:
 14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (80 total: 8 parser + 42 query + 27 service + 3 writer/parser roundtrip).
+- None currently open. All tests pass (82 total: 8 parser + 42 query + 27 service + 3 writer/parser roundtrip + 2 sqlite store).
 
 ---
 
