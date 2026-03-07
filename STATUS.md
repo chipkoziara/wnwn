@@ -31,7 +31,10 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 - `wnwn` (no args): launches TUI
 - `wnwn add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
 - `wnwn export-md --out DIR`: exports SQLite data to Markdown files
-- `wnwn import-md --from DIR`: imports Markdown files into SQLite
+- `wnwn import-md --from DIR [--mode merge|replace] [--dry-run]`: imports Markdown files into SQLite with explicit safety modes
+  - `merge` (default): non-destructive import by ID/filename; adds only missing list tasks/projects/archive tasks
+  - `replace`: resets destination SQLite store then imports full dataset from Markdown source
+  - `--dry-run`: computes and prints import plan/stats without writing data
 - `wnwn help`: usage info
 - Data dir configurable via `WNWN_DATA_DIR` env var (default: `~/.local/share/wnwn`)
 

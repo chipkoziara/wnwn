@@ -57,6 +57,13 @@ func (s *sqliteStore) Init() error {
 	return nil
 }
 
+func (s *sqliteStore) Reset() error {
+	if err := os.Remove(s.dbPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing sqlite db: %w", err)
+	}
+	return nil
+}
+
 func (s *sqliteStore) ReadList(lt model.ListType) (*model.TaskList, error) {
 	db, err := s.openDB()
 	if err != nil {

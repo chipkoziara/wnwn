@@ -2,6 +2,7 @@
 package store
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/wnwn/wnwn/internal/model"
@@ -9,6 +10,7 @@ import (
 
 type driver interface {
 	Init() error
+	Reset() error
 	ReadList(lt model.ListType) (*model.TaskList, error)
 	WriteList(list *model.TaskList) error
 	ReadProject(filename string) (*model.Project, error)
@@ -45,6 +47,14 @@ func NewMarkdown(root string) *Store {
 
 // Init initializes the selected backend storage.
 func (s *Store) Init() error { return s.driver.Init() }
+
+// Reset removes all persisted data for this store backend.
+func (s *Store) Reset() error {
+	if err := s.driver.Reset(); err != nil {
+		return fmt.Errorf("resetting store: %w", err)
+	}
+	return nil
+}
 
 // ReadList reads a list.
 func (s *Store) ReadList(lt model.ListType) (*model.TaskList, error) { return s.driver.ReadList(lt) }

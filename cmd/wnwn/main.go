@@ -210,13 +210,36 @@ func cmdExportMarkdown(args []string) {
 
 func cmdImportMarkdown(args []string) {
 	fs := flag.NewFlagSet("import-md", flag.ExitOnError)
-	var fromDir string
+	var (
+		fromDir string
+		mode    string
+		dryRun  bool
+		replace bool
+	)
 	fs.StringVar(&fromDir, "from", "", "Source markdown directory")
+	fs.StringVar(&mode, "mode", "merge", "Import mode: merge or replace")
+	fs.BoolVar(&dryRun, "dry-run", false, "Preview changes without writing")
+	fs.BoolVar(&replace, "replace", false, "Alias for --mode replace")
+	fs.Usage = func() {
+		fmt.Println("usage: wnwn import-md --from DIR [--mode merge|replace] [--dry-run]")
+		fmt.Println()
+		fmt.Println("options:")
+		fs.PrintDefaults()
+	}
 	if err := fs.Parse(args); err != nil {
 		os.Exit(1)
 	}
 	if strings.TrimSpace(fromDir) == "" {
 		fmt.Fprintln(os.Stderr, "error: --from is required")
+		os.Exit(1)
+	}
+
+	if replace {
+		mode = "replace"
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "merge" && mode != "replace" {
+		fmt.Fprintf(os.Stderr, "error: invalid --mode %q (expected merge or replace)\n", mode)
 		os.Exit(1)
 	}
 
@@ -233,12 +256,226 @@ func cmdImportMarkdown(args []string) {
 		os.Exit(1)
 	}
 
-	if err := copyAllData(src, dst); err != nil {
+	stats, err := importMarkdownData(src, dst, mode, dryRun)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: importing markdown: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Imported Markdown data from: %s\n", fromDir)
+	if dryRun {
+		fmt.Printf("Dry-run complete. Mode: %s\n", mode)
+	} else {
+		fmt.Printf("Imported Markdown data from: %s (mode: %s)\n", fromDir, mode)
+	}
+
+	fmt.Printf("  source inbox tasks: %d\n", stats.SourceInboxTasks)
+	fmt.Printf("  source actions tasks: %d\n", stats.SourceActionTasks)
+	fmt.Printf("  source projects: %d (%d tasks)\n", stats.SourceProjects, stats.SourceProjectTasks)
+	fmt.Printf("  source archives: %d (%d tasks)\n", stats.SourceArchives, stats.SourceArchiveTasks)
+	if mode == "replace" {
+		fmt.Printf("  destination reset: %t\n", stats.DestinationReset)
+	}
+	fmt.Printf("  tasks added to inbox: %d\n", stats.AddedInboxTasks)
+	fmt.Printf("  tasks added to actions: %d\n", stats.AddedActionTasks)
+	fmt.Printf("  projects added/skipped: %d/%d\n", stats.AddedProjects, stats.SkippedProjects)
+	fmt.Printf("  archive tasks added/skipped: %d/%d\n", stats.AddedArchiveTasks, stats.SkippedArchiveTasks)
+	if dryRun {
+		fmt.Println("  no data was written")
+	}
+}
+
+type importStats struct {
+	SourceInboxTasks   int
+	SourceActionTasks  int
+	SourceProjects     int
+	SourceProjectTasks int
+	SourceArchives     int
+	SourceArchiveTasks int
+
+	DestinationReset    bool
+	AddedInboxTasks     int
+	AddedActionTasks    int
+	AddedProjects       int
+	SkippedProjects     int
+	AddedArchiveTasks   int
+	SkippedArchiveTasks int
+}
+
+func importMarkdownData(src *store.Store, dst *store.Store, mode string, dryRun bool) (importStats, error) {
+	stats := importStats{}
+
+	inboxSrc, err := src.ReadList(model.ListIn)
+	if err != nil {
+		return stats, fmt.Errorf("reading source inbox: %w", err)
+	}
+	actionsSrc, err := src.ReadList(model.ListSingleActions)
+	if err != nil {
+		return stats, fmt.Errorf("reading source single-actions: %w", err)
+	}
+	stats.SourceInboxTasks = len(inboxSrc.Tasks)
+	stats.SourceActionTasks = len(actionsSrc.Tasks)
+
+	projectFiles, err := src.ListProjects()
+	if err != nil {
+		return stats, fmt.Errorf("listing source projects: %w", err)
+	}
+	stats.SourceProjects = len(projectFiles)
+	archiveFiles, err := src.ListArchives()
+	if err != nil {
+		return stats, fmt.Errorf("listing source archives: %w", err)
+	}
+	stats.SourceArchives = len(archiveFiles)
+
+	for _, filename := range projectFiles {
+		proj, err := src.ReadProject(filename)
+		if err != nil {
+			return stats, fmt.Errorf("reading source project %s: %w", filename, err)
+		}
+		for _, sg := range proj.SubGroups {
+			stats.SourceProjectTasks += len(sg.Tasks)
+		}
+	}
+	for _, filename := range archiveFiles {
+		archive, err := src.ReadArchive(filename)
+		if err != nil {
+			return stats, fmt.Errorf("reading source archive %s: %w", filename, err)
+		}
+		stats.SourceArchiveTasks += len(archive.Tasks)
+	}
+
+	if mode == "replace" {
+		stats.DestinationReset = true
+		stats.AddedInboxTasks = stats.SourceInboxTasks
+		stats.AddedActionTasks = stats.SourceActionTasks
+		stats.AddedProjects = stats.SourceProjects
+		stats.AddedArchiveTasks = stats.SourceArchiveTasks
+		if dryRun {
+			return stats, nil
+		}
+		if err := dst.Reset(); err != nil {
+			return stats, fmt.Errorf("resetting destination: %w", err)
+		}
+		if err := dst.Init(); err != nil {
+			return stats, fmt.Errorf("reinitializing destination: %w", err)
+		}
+		if err := copyAllData(src, dst); err != nil {
+			return stats, err
+		}
+		return stats, nil
+	}
+
+	// merge mode
+	inboxDst, err := dst.ReadList(model.ListIn)
+	if err != nil {
+		return stats, fmt.Errorf("reading destination inbox: %w", err)
+	}
+	actionsDst, err := dst.ReadList(model.ListSingleActions)
+	if err != nil {
+		return stats, fmt.Errorf("reading destination single-actions: %w", err)
+	}
+
+	inboxMerged, addedInbox, _ := mergeTasksByID(inboxDst.Tasks, inboxSrc.Tasks)
+	actionsMerged, addedActions, _ := mergeTasksByID(actionsDst.Tasks, actionsSrc.Tasks)
+	stats.AddedInboxTasks = addedInbox
+	stats.AddedActionTasks = addedActions
+
+	if !dryRun {
+		inboxDst.Tasks = inboxMerged
+		actionsDst.Tasks = actionsMerged
+		if err := dst.WriteList(inboxDst); err != nil {
+			return stats, fmt.Errorf("writing destination inbox: %w", err)
+		}
+		if err := dst.WriteList(actionsDst); err != nil {
+			return stats, fmt.Errorf("writing destination single-actions: %w", err)
+		}
+	}
+
+	dstProjects, err := dst.ListProjects()
+	if err != nil {
+		return stats, fmt.Errorf("listing destination projects: %w", err)
+	}
+	dstProjectSet := make(map[string]struct{}, len(dstProjects))
+	for _, fn := range dstProjects {
+		dstProjectSet[fn] = struct{}{}
+	}
+
+	for _, filename := range projectFiles {
+		if _, exists := dstProjectSet[filename]; exists {
+			stats.SkippedProjects++
+			continue
+		}
+		stats.AddedProjects++
+		if dryRun {
+			continue
+		}
+		proj, err := src.ReadProject(filename)
+		if err != nil {
+			return stats, fmt.Errorf("reading source project %s: %w", filename, err)
+		}
+		if err := dst.WriteProject(proj); err != nil {
+			return stats, fmt.Errorf("writing destination project %s: %w", filename, err)
+		}
+	}
+
+	dstArchives, err := dst.ListArchives()
+	if err != nil {
+		return stats, fmt.Errorf("listing destination archives: %w", err)
+	}
+	dstArchiveSet := make(map[string]struct{}, len(dstArchives))
+	for _, fn := range dstArchives {
+		dstArchiveSet[fn] = struct{}{}
+	}
+
+	for _, filename := range archiveFiles {
+		srcArchive, err := src.ReadArchive(filename)
+		if err != nil {
+			return stats, fmt.Errorf("reading source archive %s: %w", filename, err)
+		}
+
+		if _, exists := dstArchiveSet[filename]; !exists {
+			stats.AddedArchiveTasks += len(srcArchive.Tasks)
+			if !dryRun {
+				if err := dst.WriteArchive(filename, srcArchive); err != nil {
+					return stats, fmt.Errorf("writing destination archive %s: %w", filename, err)
+				}
+			}
+			continue
+		}
+
+		dstArchive, err := dst.ReadArchive(filename)
+		if err != nil {
+			return stats, fmt.Errorf("reading destination archive %s: %w", filename, err)
+		}
+		merged, added, skipped := mergeTasksByID(dstArchive.Tasks, srcArchive.Tasks)
+		stats.AddedArchiveTasks += added
+		stats.SkippedArchiveTasks += skipped
+		if !dryRun {
+			dstArchive.Tasks = merged
+			if err := dst.WriteArchive(filename, dstArchive); err != nil {
+				return stats, fmt.Errorf("writing merged archive %s: %w", filename, err)
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+func mergeTasksByID(base []model.Task, incoming []model.Task) (merged []model.Task, added int, skipped int) {
+	merged = append([]model.Task{}, base...)
+	ids := make(map[string]struct{}, len(base))
+	for _, t := range base {
+		ids[t.ID] = struct{}{}
+	}
+	for _, t := range incoming {
+		if _, exists := ids[t.ID]; exists {
+			skipped++
+			continue
+		}
+		merged = append(merged, t)
+		ids[t.ID] = struct{}{}
+		added++
+	}
+	return merged, added, skipped
 }
 
 func copyAllData(src *store.Store, dst *store.Store) error {

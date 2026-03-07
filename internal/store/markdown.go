@@ -61,6 +61,13 @@ func (s *markdownStore) Init() error {
 	return nil
 }
 
+func (s *markdownStore) Reset() error {
+	if err := os.RemoveAll(s.root); err != nil {
+		return fmt.Errorf("removing markdown root: %w", err)
+	}
+	return nil
+}
+
 func (s *markdownStore) listPath(lt model.ListType) string {
 	switch lt {
 	case model.ListIn:

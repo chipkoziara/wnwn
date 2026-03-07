@@ -73,3 +73,34 @@ func TestSQLiteProjectRoundTrip(t *testing.T) {
 		t.Fatalf("task text = %q", r.SubGroups[0].Tasks[0].Text)
 	}
 }
+
+func TestSQLiteReset(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.ReadList(model.ListIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list.Tasks = append(list.Tasks, model.Task{ID: "T1", Created: time.Now().UTC(), Text: "Task"})
+	if err := s.WriteList(list); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Reset(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+
+	inbox, err := s.ReadList(model.ListIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox.Tasks) != 0 {
+		t.Fatalf("expected inbox to be empty after reset, got %d tasks", len(inbox.Tasks))
+	}
+}
