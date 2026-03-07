@@ -263,6 +263,41 @@ func TestArchiveProjectTask(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectTaskStateAutoArchiveWhenEnabled(t *testing.T) {
+	s := setupTestStore(t)
+	svc := NewWithBehavior(s, BehaviorConfig{AutoArchiveDone: true})
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := svc.AddTaskToProject("my-project.md", 0, "Auto archive project task", model.StateNextAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.UpdateProjectTaskState("my-project.md", 0, task.ID, model.StateDone); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := s.ReadProject("my-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proj.SubGroups[0].Tasks) != 0 {
+		t.Fatalf("project has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
+	}
+
+	archive, err := s.ReadArchive("archive.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.Tasks) != 1 {
+		t.Fatalf("archive has %d tasks, want 1", len(archive.Tasks))
+	}
+}
+
 func TestListProjectsSummaryWithNextAction(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)

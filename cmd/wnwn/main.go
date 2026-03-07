@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/wnwn/wnwn/internal/config"
 	"github.com/wnwn/wnwn/internal/model"
 	"github.com/wnwn/wnwn/internal/service"
 	"github.com/wnwn/wnwn/internal/store"
@@ -41,7 +42,12 @@ func main() {
 
 func cmdTUI() {
 	dataDir := getDataDir()
-	m := tui.New(dataDir)
+	cfg, err := config.Load(dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: loading config: %v\n", err)
+		os.Exit(1)
+	}
+	m := tui.NewWithConfig(dataDir, cfg)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -155,7 +161,15 @@ func cmdAdd(args []string) {
 		os.Exit(1)
 	}
 
-	svc := service.New(s)
+	cfg, err := config.Load(dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: loading config: %v\n", err)
+		os.Exit(1)
+	}
+	svc := service.NewWithBehavior(s, service.BehaviorConfig{
+		AutoArchiveDone:     cfg.Archive.AutoArchiveDone,
+		AutoArchiveCanceled: cfg.Archive.AutoArchiveCanceled,
+	})
 	task, err := svc.AddToInbox(text, opts...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

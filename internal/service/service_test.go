@@ -242,6 +242,38 @@ func TestArchiveTask(t *testing.T) {
 	}
 }
 
+func TestUpdateStateDoneAutoArchiveWhenEnabled(t *testing.T) {
+	s := setupTestStore(t)
+	svc := NewWithBehavior(s, BehaviorConfig{AutoArchiveDone: true})
+
+	task, err := svc.AddToInbox("Auto archive done")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateState(model.ListSingleActions, task.ID, model.StateDone); err != nil {
+		t.Fatal(err)
+	}
+
+	sa, err := s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sa.Tasks) != 0 {
+		t.Fatalf("single-actions has %d tasks, want 0", len(sa.Tasks))
+	}
+
+	archive, err := s.ReadArchive("archive.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.Tasks) != 1 {
+		t.Fatalf("archive has %d tasks, want 1", len(archive.Tasks))
+	}
+}
+
 func TestTrashTask(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)

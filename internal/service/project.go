@@ -228,6 +228,14 @@ func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, tas
 		task.WaitingSince = &now
 	}
 
+	if svc.shouldAutoArchive(newState) {
+		task.Source = fmt.Sprintf("projects/%s", filename)
+		if err := svc.archiveTask(*task); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	}
+
 	return svc.Store.WriteProject(proj)
 }
 
@@ -260,6 +268,14 @@ func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated 
 	}
 
 	sg.Tasks[idx] = updated
+
+	if svc.shouldAutoArchive(updated.State) {
+		sg.Tasks[idx].Source = fmt.Sprintf("projects/%s", filename)
+		if err := svc.archiveTask(sg.Tasks[idx]); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	}
 
 	return svc.Store.WriteProject(proj)
 }

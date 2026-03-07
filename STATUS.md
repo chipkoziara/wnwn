@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-07 (session 7)
+Last updated: 2026-03-07 (session 8)
 
 ## What This Is
 
@@ -8,11 +8,12 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 86 tests passing)
+### Data Layer (fully working, 90 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
 - **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
+- **Config loader** (`internal/config/`): reads optional `$WNWN_DATA_DIR/config.toml` for archive behavior flags, default startup view, and configurable keybindings for list/project/view-results actions.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
@@ -39,6 +40,10 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - `--dry-run`: computes and prints import plan/stats without writing data
 - `wnwn help`: usage info
 - Data dir configurable via `WNWN_DATA_DIR` env var (default: `~/.local/share/wnwn`)
+- Config file path: `$WNWN_DATA_DIR/config.toml`
+  - `archive.auto_archive_done` / `archive.auto_archive_canceled`
+  - `ui.default_view` (`inbox`, `actions`, `projects`, `views`)
+  - `keys.list`, `keys.project`, `keys.view_results` action remapping
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:
@@ -195,12 +200,12 @@ Prioritized by impact:
 9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml still deferred (see item 12).
 10. **"Recently Modified" default view** — Quick win now that Views are shipped. Add a `created:>today` (or similar) built-in view to `model.DefaultViews()` to address the "accidental refile" feedback in ENHANCEMENTS.md.
 11. **Weekly review mode** - Guided review flow: projects with no next actions, aging waiting-for items, someday/maybe cleanup (BRD section 3). All data layer primitives now exist via `CollectAllTasks`. Recommended next major feature.
-12. **Config file** - TOML at `~/.config/wnwn/config.toml`. Keybindings, default tags, theme/colors, data directory, saved views, review reminders (BRD section 6). Not started.
+12. **Config file** - ✅ Foundation shipped (session 8): `$WNWN_DATA_DIR/config.toml` now supports archive auto-archive toggles, startup default view, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, saved view persistence, review reminders.
 13. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
 14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (86 total: 8 parser + 42 query + 31 service + 3 writer/parser roundtrip + 2 sqlite store).
+- None currently open. All tests pass (90 total: 8 parser + 42 query + 35 service + 3 writer/parser roundtrip + 2 sqlite store).
 
 ---
 
@@ -233,7 +238,7 @@ Built and shipped in session 4. Key design decisions:
 - **Source-aware state changes** — `d`/`s`/`w`/`x` in view results call `UpdateProjectTaskState` (for project tasks) or `UpdateState`/`TrashTask` (for list tasks) based on `ViewTask.IsProject`. After any mutation the query is re-run to refresh the results in-place.
 - **Task detail routing** — opening task detail from view results sets `detailFromView = viewViewResults`. On save (`saveDetailTask`), the function returns a `viewResultsLoadedMsg` (re-collect + re-filter) instead of `taskUpdatedMsg`, so the view refreshes automatically. On esc (discard), `updateTaskDetail` detects `viewViewResults` and re-runs the query.
 - **Ad-hoc queries** — `/` from the view list activates `modeEditingField` within `viewViews`. The `updateViewList` handler forwards key events to the text input and on `enter` calls `runQuery("Ad-hoc", queryStr)`.
-- **Hardcoded default views** — `model.DefaultViews()` returns the 5 built-in views. No config file yet; user-defined saved views deferred to the config file session.
+- **Default views remain built-in** — `model.DefaultViews()` still returns built-ins; persistence of user-defined saved views in config remains deferred.
 
 ## Architecture Notes
 

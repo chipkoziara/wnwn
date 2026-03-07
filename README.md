@@ -65,11 +65,42 @@ wnwn import-md --from /tmp/wnwn-export --replace
 
 ### Configuration
 
-Set `WNWN_DATA_DIR` to choose where task files are stored (default: `~/.local/share/wnwn`):
+Set `WNWN_DATA_DIR` to choose where app data is stored (default: `~/.local/share/wnwn`):
 
 ```bash
 export WNWN_DATA_DIR=~/Dropbox/wnwn
 ```
+
+Create `$WNWN_DATA_DIR/config.toml` to customize behavior:
+
+```toml
+[archive]
+auto_archive_done = false
+auto_archive_canceled = false
+
+[ui]
+default_view = "inbox" # inbox | actions | projects | views
+
+[keys.list]
+done = "d"
+archive = "A"
+process = "P"
+
+[keys.project]
+done = "d"
+archive = "A"
+
+[keys.view_results]
+done = "d"
+archive = "A"
+refresh = "R"
+```
+
+Keybinding action names supported:
+
+- `keys.list`: `add`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `archive`, `trash`, `process`
+- `keys.project`: `add_task`, `add_subgroup`, `done`, `archive`, `move_subgroup`
+- `keys.view_results`: `done`, `someday`, `waiting`, `archive`, `trash`, `refresh`
 
 ## Keyboard Shortcuts
 
@@ -208,7 +239,7 @@ The core capture/organize/review workflow is functional. Planned next:
 - **Views and filtering** — text-based query DSL (`state:next-action tag:@home`, `deadline:<2026-03-07`) with saved named views
 - **Fuzzy search** — free-text search across task names, notes, and all content
 - **Weekly Review mode** — guided flow to review projects, waiting-for items, and someday/maybe
-- **Config file** — `~/.config/wnwn/config.toml` for keybindings, themes, default tags, saved views
+- **Theming and advanced config** — extend config beyond behavior + keybindings (themes, default tags, saved views persistence)
 - **Tickler File** — skeuomorphic 43-folder visualization (31 days + 12 months) over the agenda view
 
 ## Tech Stack

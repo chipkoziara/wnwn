@@ -15,12 +15,23 @@ import (
 
 // Service provides GTD task operations.
 type Service struct {
-	Store *store.Store
+	Store    *store.Store
+	behavior BehaviorConfig
+}
+
+type BehaviorConfig struct {
+	AutoArchiveDone     bool
+	AutoArchiveCanceled bool
 }
 
 // New creates a Service backed by the given store.
 func New(s *store.Store) *Service {
-	return &Service{Store: s}
+	return NewWithBehavior(s, BehaviorConfig{})
+}
+
+// NewWithBehavior creates a Service with configurable behavior flags.
+func NewWithBehavior(s *store.Store, behavior BehaviorConfig) *Service {
+	return &Service{Store: s, behavior: behavior}
 }
 
 // AddToInbox creates a new task and appends it to the inbox.
@@ -68,6 +79,14 @@ func (svc *Service) UpdateState(listType model.ListType, taskID string, newState
 	if newState == model.StateWaitingFor && task.WaitingSince == nil {
 		now := time.Now().Truncate(24 * time.Hour)
 		task.WaitingSince = &now
+	}
+
+	if svc.shouldAutoArchive(newState) {
+		task.Source = string(listType)
+		if err := svc.archiveTask(*task); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
 	}
 
 	return svc.Store.WriteList(list)
@@ -134,6 +153,14 @@ func (svc *Service) UpdateTask(listType model.ListType, updated model.Task) erro
 	}
 
 	list.Tasks[idx] = updated
+
+	if svc.shouldAutoArchive(updated.State) {
+		list.Tasks[idx].Source = string(listType)
+		if err := svc.archiveTask(list.Tasks[idx]); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
+	}
 
 	return svc.Store.WriteList(list)
 }
@@ -350,6 +377,16 @@ func (svc *Service) CollectArchiveTasks() ([]ViewTask, error) {
 	})
 
 	return results, nil
+}
+
+func (svc *Service) shouldAutoArchive(state model.TaskState) bool {
+	if state == model.StateDone {
+		return svc.behavior.AutoArchiveDone
+	}
+	if state == model.StateCanceled {
+		return svc.behavior.AutoArchiveCanceled
+	}
+	return false
 }
 
 // WithWaitingOn sets who/what the task is waiting on and automatically sets waiting-for state.

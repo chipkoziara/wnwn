@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/wnwn/wnwn/internal/config"
 	"github.com/wnwn/wnwn/internal/model"
 	"github.com/wnwn/wnwn/internal/query"
 	"github.com/wnwn/wnwn/internal/service"
@@ -177,31 +178,137 @@ type Model struct {
 	processTask  model.Task   // working copy of the current item (mutated during enrichment)
 	processTags  []string     // tag accumulator for stepEnrichTags (tab-separated entry)
 	processStats processStats // running totals for the completion summary
+
+	keybindings map[string]map[string]string
 }
 
 // New creates a new TUI model backed by the given data directory.
 func New(dataDir string) Model {
+	cfg, err := config.Load(dataDir)
+	if err != nil {
+		cfg = config.Default()
+	}
+	return NewWithConfig(dataDir, cfg)
+}
+
+// NewWithConfig creates a new TUI model with an explicit config.
+func NewWithConfig(dataDir string, cfg config.Config) Model {
 	s := store.New(dataDir)
-	svc := service.New(s)
+	svc := service.NewWithBehavior(s, service.BehaviorConfig{
+		AutoArchiveDone:     cfg.Archive.AutoArchiveDone,
+		AutoArchiveCanceled: cfg.Archive.AutoArchiveCanceled,
+	})
 
 	ti := textinput.New()
 	ti.Placeholder = "What needs to be done?"
 	ti.CharLimit = 256
 	ti.SetWidth(60)
 
-	return Model{
+	m := Model{
 		svc:         svc,
 		store:       s,
 		currentList: model.ListIn,
 		input:       ti,
 		datePicker:  datepicker.New(),
 		savedViews:  model.DefaultViews(),
+		keybindings: mergeKeybindings(cfg),
 	}
+
+	switch strings.ToLower(cfg.UI.DefaultView) {
+	case "actions", "single-actions":
+		m.view = viewList
+		m.currentList = model.ListSingleActions
+	case "projects":
+		m.view = viewProjects
+	case "views":
+		m.view = viewViews
+	default:
+		m.view = viewList
+		m.currentList = model.ListIn
+	}
+
+	return m
 }
 
 // Init loads the current list on startup.
 func (m Model) Init() tea.Cmd {
+	if m.view == viewProjects {
+		return m.loadProjects
+	}
+	if m.view == viewViews {
+		return nil
+	}
 	return m.loadCurrentList
+}
+
+var defaultKeybindings = map[string]map[string]string{
+	"list": {
+		"add":            "a",
+		"refile_actions": "r",
+		"refile_project": "p",
+		"someday":        "s",
+		"waiting":        "w",
+		"done":           "d",
+		"archive":        "A",
+		"trash":          "x",
+		"process":        "P",
+	},
+	"project": {
+		"add_task":      "a",
+		"add_subgroup":  "n",
+		"done":          "d",
+		"archive":       "A",
+		"move_subgroup": "m",
+	},
+	"view_results": {
+		"done":    "d",
+		"someday": "s",
+		"waiting": "w",
+		"archive": "A",
+		"trash":   "x",
+		"refresh": "R",
+	},
+}
+
+func mergeKeybindings(cfg config.Config) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for scope, defaults := range defaultKeybindings {
+		m := map[string]string{}
+		for action, key := range defaults {
+			m[action] = key
+		}
+		out[scope] = m
+	}
+	for k, v := range cfg.Keys.List {
+		if strings.TrimSpace(v) != "" {
+			out["list"][k] = v
+		}
+	}
+	for k, v := range cfg.Keys.Project {
+		if strings.TrimSpace(v) != "" {
+			out["project"][k] = v
+		}
+	}
+	for k, v := range cfg.Keys.ViewResults {
+		if strings.TrimSpace(v) != "" {
+			out["view_results"][k] = v
+		}
+	}
+	return out
+}
+
+func (m Model) remapKey(scope string, raw string) string {
+	cfgScope, ok := m.keybindings[scope]
+	if !ok {
+		return raw
+	}
+	for action, configuredKey := range cfgScope {
+		defaultKey := defaultKeybindings[scope][action]
+		if configuredKey == raw {
+			return defaultKey
+		}
+	}
+	return raw
 }
 
 // loadCurrentList is a tea.Cmd that reads the current list from disk.
@@ -510,7 +617,8 @@ func (m Model) clearStatusAfter() tea.Cmd {
 
 // updateNormal handles keys in normal (browsing) mode.
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := m.remapKey("list", msg.String())
+	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
@@ -1134,9 +1242,10 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // updateProjectDetail handles keys when viewing a single project.
 func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := m.remapKey("project", msg.String())
 	flatItems := m.flattenProject()
 
-	switch msg.String() {
+	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
@@ -3169,7 +3278,8 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // updateViewResults handles keys in the view results screen.
 func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := m.remapKey("view_results", msg.String())
+	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
