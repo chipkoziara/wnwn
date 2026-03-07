@@ -65,13 +65,20 @@ wnwn import-md --from /tmp/wnwn-export --replace
 
 ### Configuration
 
-Set `WNWN_DATA_DIR` to choose where app data is stored (default: `~/.local/share/wnwn`):
+Set `WNWN_DATA_DIR` to choose where app data is stored.
+Defaults follow XDG data conventions: `$XDG_DATA_HOME/wnwn` when set, otherwise `~/.local/share/wnwn`.
 
 ```bash
 export WNWN_DATA_DIR=~/Dropbox/wnwn
 ```
 
-Create `$WNWN_DATA_DIR/config.toml` to customize behavior:
+Config file resolution order:
+
+1. `WNWN_CONFIG_FILE` (explicit override)
+2. `$XDG_CONFIG_HOME/wnwn/config.toml` (or `~/.config/wnwn/config.toml`)
+3. Legacy fallback: `$WNWN_DATA_DIR/config.toml`
+
+Create `~/.config/wnwn/config.toml` (or your `XDG_CONFIG_HOME` equivalent) to customize behavior:
 
 ```toml
 [archive]

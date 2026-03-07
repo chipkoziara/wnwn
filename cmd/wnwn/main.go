@@ -539,10 +539,13 @@ func copyAllData(src *store.Store, dst *store.Store) error {
 }
 
 // getDataDir returns the wnwn data directory path.
-// Checks WNWN_DATA_DIR env var first, falls back to ~/.local/share/wnwn.
+// Checks WNWN_DATA_DIR first, then XDG_DATA_HOME/wnwn, then ~/.local/share/wnwn.
 func getDataDir() string {
 	if dir := os.Getenv("WNWN_DATA_DIR"); dir != "" {
 		return dir
+	}
+	if xdgDataHome := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdgDataHome != "" {
+		return filepath.Join(xdgDataHome, "wnwn")
 	}
 
 	home, err := os.UserHomeDir()

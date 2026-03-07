@@ -64,7 +64,7 @@ Our application will have a few distinctions to make the approach more modern an
 - Ad-hoc filters can be applied on the fly and optionally saved as named views
 
 #### Saved Views
-- Named views are intended to be persisted in `config.toml` within the active app data directory (`$WNWN_DATA_DIR`)
+- Named views are intended to be persisted in `config.toml` under the config directory (`$XDG_CONFIG_HOME/wnwn` or `~/.config/wnwn`)
 - Some default views ship out of the box (e.g. "Next Actions", "Waiting For", "This Week's Agenda", "Someday/Maybe")
 - Users can create, edit, and delete saved views
 
@@ -355,7 +355,7 @@ Note: Bubbletea v2 uses `charm.land/*` import paths (not `github.com/charmbracel
 
 ## 6. Configuration
 
-Users should be able to edit configuration via an app-specific `config.toml` in the active app data directory (`$WNWN_DATA_DIR/config.toml`).
+Users should be able to edit configuration via an app-specific `config.toml` in the config directory (`$XDG_CONFIG_HOME/wnwn/config.toml` or `~/.config/wnwn/config.toml`), with optional explicit override via `WNWN_CONFIG_FILE`.
 
 ### Configuration Scope
 The following are configurable in v1:

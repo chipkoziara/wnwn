@@ -11,6 +11,7 @@ import (
 )
 
 const Filename = "config.toml"
+const envConfigFile = "WNWN_CONFIG_FILE"
 
 type Config struct {
 	Archive ArchiveConfig `toml:"archive"`
@@ -48,25 +49,57 @@ func Default() Config {
 	}
 }
 
-func Path(dataDir string) string {
-	return filepath.Join(dataDir, Filename)
+func Path() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".config", "wnwn", Filename)
+	}
+	xdgConfigHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+	if xdgConfigHome == "" {
+		xdgConfigHome = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdgConfigHome, "wnwn", Filename)
 }
 
 func Load(dataDir string) (Config, error) {
 	cfg := Default()
-	raw, err := os.ReadFile(Path(dataDir))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return cfg, nil
+	paths := candidatePaths(dataDir)
+	for i, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				if i == 0 && strings.TrimSpace(os.Getenv(envConfigFile)) != "" {
+					return cfg, fmt.Errorf("configured %s file not found: %s", envConfigFile, p)
+				}
+				continue
+			}
+			return cfg, fmt.Errorf("reading config %s: %w", p, err)
 		}
-		return cfg, fmt.Errorf("reading config: %w", err)
+
+		if err := toml.Unmarshal(raw, &cfg); err != nil {
+			return Default(), fmt.Errorf("parsing config %s: %w", p, err)
+		}
+		cfg.normalize()
+		return cfg, nil
 	}
 
-	if err := toml.Unmarshal(raw, &cfg); err != nil {
-		return Default(), fmt.Errorf("parsing config.toml: %w", err)
-	}
-	cfg.normalize()
 	return cfg, nil
+}
+
+func candidatePaths(dataDir string) []string {
+	override := strings.TrimSpace(os.Getenv(envConfigFile))
+	if override != "" {
+		return []string{override}
+	}
+
+	paths := []string{Path()}
+	if dataDir != "" {
+		legacy := filepath.Join(dataDir, Filename)
+		if legacy != paths[0] {
+			paths = append(paths, legacy)
+		}
+	}
+	return paths
 }
 
 func (c *Config) normalize() {
