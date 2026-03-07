@@ -117,6 +117,12 @@ someday = "m"
 archive = "A"
 trash = "x"
 refresh = "R"
+
+[keys.disable]
+# Disable direct one-key actions while still allowing prefixes.
+list = ["done", "cancel", "waiting", "someday", "refile_project"]
+project = ["done", "cancel"]
+view_results = ["done", "cancel", "waiting", "someday"]
 ```
 
 Keybinding action names supported:
@@ -124,6 +130,7 @@ Keybinding action names supported:
 - `keys.list`: `add`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `cancel`, `archive`, `trash`, `process`
 - `keys.project`: `add_task`, `add_subgroup`, `done`, `cancel`, `archive`, `trash`, `move_subgroup`
 - `keys.view_results`: `done`, `cancel`, `someday`, `waiting`, `archive`, `trash`, `refresh`
+- `keys.disable`: action names to disable as direct one-key shortcuts (per scope)
 
 ## Keyboard Shortcuts
 
@@ -141,7 +148,7 @@ Keybinding action names supported:
 |-----|--------|
 | `a` | Add task inline |
 | `P` | Process inbox (guided GTD decision tree) |
-| `enter` | Open task detail / edit view |
+| `e` | Open task detail / edit view |
 | `r` then `a` | Route to Single Actions as next action |
 | `p` | Refile to a project |
 | `s` then `m` | Set someday/maybe |
@@ -157,7 +164,7 @@ Keybinding action names supported:
 
 | Key | Action |
 |-----|--------|
-| `enter` | Open task detail / edit view |
+| `e` | Open task detail / edit view |
 | `p` | Refile to a project |
 | `s` then `m/d/c/w` | State prefix actions |
 | `m` / `w` / `d` / `c` | Quick state changes |
@@ -177,7 +184,7 @@ Keybinding action names supported:
 
 | Key | Action |
 |-----|--------|
-| `enter` | Open task detail / edit view |
+| `e` | Open task detail / edit view |
 | `a` | Add task to current sub-group |
 | `n` | Add new sub-group |
 | `d` | Mark task done |

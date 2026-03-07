@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-07 (session 10)
+Last updated: 2026-03-07 (session 11)
 
 ## What This Is
 
@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 95 tests passing)
+### Data Layer (fully working, 96 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -49,6 +49,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - `archive.auto_archive_done` / `archive.auto_archive_canceled`
   - `ui.default_view` (`inbox`, `actions`, `projects`, `views`)
   - `keys.list`, `keys.project`, `keys.view_results` action remapping (including `cancel` and `trash`)
+  - `keys.disable` for per-scope disabling of direct one-key actions (while keeping prefix workflows)
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:
@@ -57,7 +58,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - j/k, arrow keys, g/G navigation
 - Tab and 1/2/3 to switch between views
 - Status messages with auto-clear
-- `enter`: open task detail view
+- `e`: open task detail view
 
 **Inbox view:**
 - `a`: add task inline
@@ -101,7 +102,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Project detail view:**
 - Flattened sub-group headings + tasks
-- `enter`: open task detail view for selected task
+- `e`: open task detail view for selected task
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `s` prefix + (`m`/`d`/`c`/`w`): grouped state actions
@@ -137,7 +138,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Shows filtered tasks from all sources (inbox, single-actions, all projects) with muted source badge `[inbox]`, `[actions]`, `[project-name]`
 - Header shows view name and query string
 - `j`/`k`/`g`/`G`: navigate results
-- `enter`: open task detail (full edit; esc/save returns to view results and refreshes)
+- `e`: open task detail (full edit; esc/save returns to view results and refreshes)
 - `d`/`c`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
 - `s` prefix + (`m`/`d`/`c`/`w`) for grouped state actions; direct quick states remain available (`m`/`d`/`c`/`w`)
 - `t` prefix + (`d`/`s`) for quick deadline/scheduled edit
@@ -229,7 +230,7 @@ Prioritized by impact:
 13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (95 total: 8 parser + 42 query + 37 service + 3 writer/parser roundtrip + 2 sqlite store + 3 config).
+- None currently open. All tests pass (96 total: 8 parser + 42 query + 37 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config).
 
 ---
 

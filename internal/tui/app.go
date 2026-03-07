@@ -204,7 +204,8 @@ type Model struct {
 	weeklyReviewCursors [weeklyStepCount]int
 	pendingPrefix       keyPrefix
 
-	keybindings map[string]map[string]string
+	keybindings    map[string]map[string]string
+	disabledAction map[string]map[string]bool
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -229,14 +230,16 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 	ti.CharLimit = 256
 	ti.SetWidth(60)
 
+	keybindings, disabled := mergeKeybindings(cfg)
 	m := Model{
-		svc:         svc,
-		store:       s,
-		currentList: model.ListIn,
-		input:       ti,
-		datePicker:  datepicker.New(),
-		savedViews:  model.DefaultViews(),
-		keybindings: mergeKeybindings(cfg),
+		svc:            svc,
+		store:          s,
+		currentList:    model.ListIn,
+		input:          ti,
+		datePicker:     datepicker.New(),
+		savedViews:     model.DefaultViews(),
+		keybindings:    keybindings,
+		disabledAction: disabled,
 	}
 
 	switch strings.ToLower(cfg.UI.DefaultView) {
@@ -299,8 +302,13 @@ var defaultKeybindings = map[string]map[string]string{
 	},
 }
 
-func mergeKeybindings(cfg config.Config) map[string]map[string]string {
+func mergeKeybindings(cfg config.Config) (map[string]map[string]string, map[string]map[string]bool) {
 	out := map[string]map[string]string{}
+	disabled := map[string]map[string]bool{
+		"list":         {},
+		"project":      {},
+		"view_results": {},
+	}
 	for scope, defaults := range defaultKeybindings {
 		m := map[string]string{}
 		for action, key := range defaults {
@@ -323,7 +331,16 @@ func mergeKeybindings(cfg config.Config) map[string]map[string]string {
 			out["view_results"][k] = v
 		}
 	}
-	return out
+	for _, a := range cfg.Keys.Disable.List {
+		disabled["list"][a] = true
+	}
+	for _, a := range cfg.Keys.Disable.Project {
+		disabled["project"][a] = true
+	}
+	for _, a := range cfg.Keys.Disable.ViewResults {
+		disabled["view_results"][a] = true
+	}
+	return out, disabled
 }
 
 func (m Model) remapKey(scope string, raw string) string {
@@ -338,6 +355,33 @@ func (m Model) remapKey(scope string, raw string) string {
 		}
 	}
 	return raw
+}
+
+func (m Model) actionDisabled(scope, action string) bool {
+	if m.disabledAction == nil {
+		return false
+	}
+	actions, ok := m.disabledAction[scope]
+	if !ok {
+		return false
+	}
+	return actions[action]
+}
+
+func (m Model) keyDisabled(scope, raw string) bool {
+	actions, ok := defaultKeybindings[scope]
+	if !ok {
+		return false
+	}
+	for action, defaultKey := range actions {
+		configuredKey := m.keybindings[scope][action]
+		if raw == defaultKey || raw == configuredKey {
+			if m.actionDisabled(scope, action) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // loadCurrentList is a tea.Cmd that reads the current list from disk.
@@ -782,6 +826,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.datePicker.Open(initial)
 		}
 	}
+	if m.keyDisabled("list", raw) {
+		return m, nil
+	}
 
 	key := m.remapKey("list", raw)
 	switch key {
@@ -852,7 +899,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	// Open task detail view.
-	case "enter", "e":
+	case "e":
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			m.detailTask = task
@@ -1483,6 +1530,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cancelPrefix()
 		}
 	}
+	if m.keyDisabled("project", raw) {
+		return m, nil
+	}
 
 	key := m.remapKey("project", raw)
 
@@ -1514,7 +1564,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.projCursor = len(flatItems) - 1
 		}
 
-	case "enter", "e":
+	case "e":
 		// Open task detail for the selected task.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -3170,7 +3220,7 @@ func (m Model) helpText() string {
 		if m.pendingPrefix == prefixTime {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
-		return "enter/e: detail  s: state-prefix  m: someday  t: time-prefix  d/c/w: quick states  A: archive  x: trash  R: refresh  esc: back"
+		return "e: detail  s: state-prefix  m: someday  t: time-prefix  d/c/w: quick states  A: archive  x: trash  R: refresh  esc: back"
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -3185,7 +3235,7 @@ func (m Model) helpText() string {
 		if m.pendingPrefix == prefixTime {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
-		return "enter/e: detail  a: add task  n: new sub-group  s: state-prefix  t: time-prefix  d/c/w: quick states  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move  esc: back"
+		return "e: detail  a: add task  n: new sub-group  s: state-prefix  t: time-prefix  d/c/w: quick states  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move  esc: back"
 	default:
 		if m.pendingPrefix == prefixState {
 			return "state -> d: done  c: canceled  w: waiting-for  m: someday  esc: cancel"
@@ -3197,9 +3247,9 @@ func (m Model) helpText() string {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
 		if m.currentList == model.ListIn {
-			return "enter/e: detail  a: add  P: process  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
+			return "e: detail  a: add  P: process  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
 		}
-		return "enter/e: detail  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
+		return "e: detail  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
 	}
 }
 
@@ -3914,6 +3964,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cancelPrefix()
 		}
 	}
+	if m.keyDisabled("view_results", raw) {
+		return m, nil
+	}
 
 	key := m.remapKey("view_results", raw)
 	switch key {
@@ -3942,7 +3995,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.viewCursor = len(m.viewResults) - 1
 		}
 
-	case "enter", "e":
+	case "e":
 		if len(m.viewResults) == 0 {
 			return m, nil
 		}

@@ -32,6 +32,13 @@ type KeysConfig struct {
 	List        map[string]string `toml:"list"`
 	Project     map[string]string `toml:"project"`
 	ViewResults map[string]string `toml:"view_results"`
+	Disable     KeysDisableConfig `toml:"disable"`
+}
+
+type KeysDisableConfig struct {
+	List        []string `toml:"list"`
+	Project     []string `toml:"project"`
+	ViewResults []string `toml:"view_results"`
 }
 
 func Default() Config {
@@ -116,4 +123,24 @@ func (c *Config) normalize() {
 	if c.Keys.ViewResults == nil {
 		c.Keys.ViewResults = map[string]string{}
 	}
+	c.Keys.Disable.List = normalizeActionList(c.Keys.Disable.List)
+	c.Keys.Disable.Project = normalizeActionList(c.Keys.Disable.Project)
+	c.Keys.Disable.ViewResults = normalizeActionList(c.Keys.Disable.ViewResults)
+}
+
+func normalizeActionList(actions []string) []string {
+	out := make([]string, 0, len(actions))
+	seen := map[string]struct{}{}
+	for _, a := range actions {
+		a = strings.TrimSpace(strings.ToLower(a))
+		if a == "" {
+			continue
+		}
+		if _, ok := seen[a]; ok {
+			continue
+		}
+		seen[a] = struct{}{}
+		out = append(out, a)
+	}
+	return out
 }
