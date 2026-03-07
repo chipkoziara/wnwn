@@ -24,6 +24,14 @@ type BehaviorConfig struct {
 	AutoArchiveCanceled bool
 }
 
+// WeeklyReviewData contains grouped review buckets used by weekly review mode.
+type WeeklyReviewData struct {
+	ProjectsWithoutNextAction []ProjectSummary
+	AgingWaitingFor           []ViewTask
+	SomedayMaybe              []ViewTask
+	RecentArchived            []ViewTask
+}
+
 // New creates a Service backed by the given store.
 func New(s *store.Store) *Service {
 	return NewWithBehavior(s, BehaviorConfig{})
@@ -377,6 +385,55 @@ func (svc *Service) CollectArchiveTasks() ([]ViewTask, error) {
 	})
 
 	return results, nil
+}
+
+// WeeklyReview collects grouped items for a guided weekly review flow.
+func (svc *Service) WeeklyReview(now time.Time) (WeeklyReviewData, error) {
+	var out WeeklyReviewData
+
+	projects, err := svc.ListProjects()
+	if err != nil {
+		return out, fmt.Errorf("listing projects: %w", err)
+	}
+	for _, p := range projects {
+		if p.State == model.StateDone || p.State == model.StateCanceled || p.State == model.StateSomeday {
+			continue
+		}
+		if p.TaskCount > 0 && p.NextAction == "" {
+			out.ProjectsWithoutNextAction = append(out.ProjectsWithoutNextAction, p)
+		}
+	}
+
+	allTasks, err := svc.CollectAllTasks()
+	if err != nil {
+		return out, fmt.Errorf("collecting active tasks: %w", err)
+	}
+
+	waitingCutoff := now.AddDate(0, 0, -7)
+	for _, vt := range allTasks {
+		t := vt.Task
+		switch t.State {
+		case model.StateWaitingFor:
+			if t.WaitingSince != nil && !t.WaitingSince.After(waitingCutoff) {
+				out.AgingWaitingFor = append(out.AgingWaitingFor, vt)
+			}
+		case model.StateSomeday:
+			out.SomedayMaybe = append(out.SomedayMaybe, vt)
+		}
+	}
+
+	archived, err := svc.CollectArchiveTasks()
+	if err != nil {
+		return out, fmt.Errorf("collecting archived tasks: %w", err)
+	}
+	archiveCutoff := now.AddDate(0, 0, -7)
+	for _, vt := range archived {
+		if vt.Task.ArchivedAt != nil && !vt.Task.ArchivedAt.Before(archiveCutoff) {
+			out.RecentArchived = append(out.RecentArchived, vt)
+		}
+	}
+
+	return out, nil
 }
 
 func (svc *Service) shouldAutoArchive(state model.TaskState) bool {

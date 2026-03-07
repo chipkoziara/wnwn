@@ -44,6 +44,17 @@ const (
 	viewProjectEdit                    // editing project-level metadata (title, state, tags, etc.)
 	viewViews                          // saved view list (4th tab)
 	viewViewResults                    // filtered task results for the active or ad-hoc view
+	viewWeeklyReview                   // guided weekly review workflow
+)
+
+type weeklyReviewStep int
+
+const (
+	weeklyStepProjects weeklyReviewStep = iota
+	weeklyStepWaiting
+	weeklyStepSomeday
+	weeklyStepArchived
+	weeklyStepCount
 )
 
 // projEditField enumerates the editable fields in the project edit view.
@@ -178,6 +189,10 @@ type Model struct {
 	processTask  model.Task   // working copy of the current item (mutated during enrichment)
 	processTags  []string     // tag accumulator for stepEnrichTags (tab-separated entry)
 	processStats processStats // running totals for the completion summary
+
+	weeklyReviewData    service.WeeklyReviewData
+	weeklyReviewStep    weeklyReviewStep
+	weeklyReviewCursors [weeklyStepCount]int
 
 	keybindings map[string]map[string]string
 }
@@ -365,6 +380,11 @@ type processInboxLoadedMsg struct{ tasks []model.Task }
 // The action field is used to update processStats.
 type processAdvancedMsg struct{ action string }
 
+type weeklyReviewLoadedMsg struct {
+	data service.WeeklyReviewData
+	err  error
+}
+
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -507,6 +527,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.advanceProcessInbox()
 		return m, nil
 
+	case weeklyReviewLoadedMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", msg.err)
+			return m, m.clearStatusAfter()
+		}
+		m.weeklyReviewData = msg.data
+		m.weeklyReviewStep = weeklyStepProjects
+		m.weeklyReviewCursors = [weeklyStepCount]int{}
+		m.view = viewWeeklyReview
+		return m, nil
+
 	case clearStatusMsg:
 		m.statusMsg = ""
 		return m, nil
@@ -552,6 +583,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.updateViewList(msg)
 			case viewViewResults:
 				return m.updateViewResults(msg)
+			case viewWeeklyReview:
+				return m.updateWeeklyReview(msg)
 			default:
 				return m.updateNormal(msg)
 			}
@@ -585,6 +618,17 @@ func (m Model) loadProjects() tea.Msg {
 		return errMsg{err}
 	}
 	return projectsLoadedMsg{projects}
+}
+
+func (m Model) loadWeeklyReview() tea.Msg {
+	if err := m.store.Init(); err != nil {
+		return weeklyReviewLoadedMsg{err: err}
+	}
+	data, err := m.svc.WeeklyReview(time.Now())
+	if err != nil {
+		return weeklyReviewLoadedMsg{err: err}
+	}
+	return weeklyReviewLoadedMsg{data: data}
 }
 
 // loadProjectDetail loads a full project by filename, resetting the cursor.
@@ -1770,6 +1814,8 @@ func (m Model) View() tea.View {
 		m.renderViewList(&b)
 	case m.view == viewViewResults:
 		m.renderViewResults(&b)
+	case m.view == viewWeeklyReview:
+		m.renderWeeklyReview(&b)
 	case m.view == viewProjects:
 		m.renderProjectListView(&b)
 	case m.view == viewProjectDetail:
@@ -2282,6 +2328,9 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// the user may have made before discarding.
 			return m, m.runQuery(m.activeViewName, m.activeViewQuery)
 		}
+		if m.detailFromView == viewWeeklyReview {
+			return m, m.loadWeeklyReview
+		}
 		return m, nil
 
 	case "j", "down":
@@ -2515,6 +2564,9 @@ func (m Model) saveDetailTask() tea.Cmd {
 				}
 			}
 			return viewResultsLoadedMsg{name: viewName, queryStr: viewQueryStr, results: filtered}
+		}
+		if fromView == viewWeeklyReview {
+			return m.loadWeeklyReview()
 		}
 		return taskUpdatedMsg{task.Text}
 	}
@@ -2812,7 +2864,7 @@ func (m Model) renderTabBar() string {
 		tabs[2] = inactiveTabStyle.Render(projectsLabel)
 	}
 
-	if m.view == viewViews || m.view == viewViewResults {
+	if m.view == viewViews || m.view == viewViewResults || m.view == viewWeeklyReview {
 		tabs[3] = activeTabStyle.Render(viewsLabel)
 	} else {
 		tabs[3] = inactiveTabStyle.Render(viewsLabel)
@@ -2885,7 +2937,10 @@ func (m Model) helpText() string {
 		if m.mode == modeEditingField {
 			return "enter: run query  esc: cancel"
 		}
-		return "enter: open view  /: ad-hoc query  j/k: navigate  1-4/tab: switch tab  q: quit"
+		return "enter: open view  /: ad-hoc query  W: weekly review  j/k: navigate  1-4/tab: switch tab  q: quit"
+	}
+	if m.view == viewWeeklyReview {
+		return "j/k: navigate  h/l: prev/next section  enter: open item  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
 	}
 	if m.view == viewViewResults {
 		return "enter: task detail  d: done  c: canceled  s: someday  w: waiting  A: archive  x: trash  R: refresh  esc: back  j/k: navigate"
@@ -3212,6 +3267,246 @@ func (m Model) runQuery(name, queryStr string) tea.Cmd {
 	}
 }
 
+func weeklyStepTitle(step weeklyReviewStep) string {
+	switch step {
+	case weeklyStepProjects:
+		return "Projects Missing Next Action"
+	case weeklyStepWaiting:
+		return "Aging Waiting For (7+ days)"
+	case weeklyStepSomeday:
+		return "Someday / Maybe Triage"
+	default:
+		return "Recently Archived (7 days)"
+	}
+}
+
+func (m Model) weeklyTasksForStep(step weeklyReviewStep) []service.ViewTask {
+	switch step {
+	case weeklyStepWaiting:
+		return m.weeklyReviewData.AgingWaitingFor
+	case weeklyStepSomeday:
+		return m.weeklyReviewData.SomedayMaybe
+	case weeklyStepArchived:
+		return m.weeklyReviewData.RecentArchived
+	default:
+		return nil
+	}
+}
+
+func (m *Model) clampWeeklyCursor() {
+	step := m.weeklyReviewStep
+	max := 0
+	if step == weeklyStepProjects {
+		max = len(m.weeklyReviewData.ProjectsWithoutNextAction)
+	} else {
+		max = len(m.weeklyTasksForStep(step))
+	}
+	if max == 0 {
+		m.weeklyReviewCursors[step] = 0
+		return
+	}
+	if m.weeklyReviewCursors[step] >= max {
+		m.weeklyReviewCursors[step] = max - 1
+	}
+	if m.weeklyReviewCursors[step] < 0 {
+		m.weeklyReviewCursors[step] = 0
+	}
+}
+
+func (m Model) selectedWeeklyTask() (service.ViewTask, bool) {
+	tasks := m.weeklyTasksForStep(m.weeklyReviewStep)
+	if len(tasks) == 0 {
+		return service.ViewTask{}, false
+	}
+	c := m.weeklyReviewCursors[m.weeklyReviewStep]
+	if c < 0 || c >= len(tasks) {
+		return service.ViewTask{}, false
+	}
+	return tasks[c], true
+}
+
+func (m Model) weeklyTaskStateChange(newState model.TaskState) tea.Cmd {
+	vt, ok := m.selectedWeeklyTask()
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, newState)
+		} else {
+			err = m.svc.UpdateState(vt.ListType, vt.Task.ID, newState)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		return m.loadWeeklyReview()
+	}
+}
+
+func (m Model) weeklyTaskArchive() tea.Cmd {
+	vt, ok := m.selectedWeeklyTask()
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
+		} else {
+			err = m.svc.ArchiveTask(vt.ListType, vt.Task.ID)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		return m.loadWeeklyReview()
+	}
+}
+
+func (m Model) weeklyTaskTrash() tea.Cmd {
+	vt, ok := m.selectedWeeklyTask()
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		var err error
+		if vt.IsProject {
+			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
+		} else {
+			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
+		}
+		if err != nil {
+			return errMsg{err}
+		}
+		return m.loadWeeklyReview()
+	}
+}
+
+// updateWeeklyReview handles keys in guided weekly review mode.
+func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.view = viewViews
+		return m, nil
+	case "h", "left", "p":
+		if m.weeklyReviewStep == 0 {
+			m.weeklyReviewStep = weeklyStepCount - 1
+		} else {
+			m.weeklyReviewStep--
+		}
+		m.clampWeeklyCursor()
+		return m, nil
+	case "l", "right", "n":
+		m.weeklyReviewStep = (m.weeklyReviewStep + 1) % weeklyStepCount
+		m.clampWeeklyCursor()
+		return m, nil
+	case "j", "down":
+		m.weeklyReviewCursors[m.weeklyReviewStep]++
+		m.clampWeeklyCursor()
+		return m, nil
+	case "k", "up":
+		m.weeklyReviewCursors[m.weeklyReviewStep]--
+		m.clampWeeklyCursor()
+		return m, nil
+	case "g":
+		m.weeklyReviewCursors[m.weeklyReviewStep] = 0
+		return m, nil
+	case "G":
+		if m.weeklyReviewStep == weeklyStepProjects {
+			if n := len(m.weeklyReviewData.ProjectsWithoutNextAction); n > 0 {
+				m.weeklyReviewCursors[m.weeklyReviewStep] = n - 1
+			}
+		} else {
+			if n := len(m.weeklyTasksForStep(m.weeklyReviewStep)); n > 0 {
+				m.weeklyReviewCursors[m.weeklyReviewStep] = n - 1
+			}
+		}
+		return m, nil
+	case "enter":
+		if m.weeklyReviewStep == weeklyStepProjects {
+			if len(m.weeklyReviewData.ProjectsWithoutNextAction) == 0 {
+				return m, nil
+			}
+			c := m.weeklyReviewCursors[weeklyStepProjects]
+			if c < 0 || c >= len(m.weeklyReviewData.ProjectsWithoutNextAction) {
+				return m, nil
+			}
+			p := m.weeklyReviewData.ProjectsWithoutNextAction[c]
+			return m, m.loadProjectDetail(p.Filename)
+		}
+		vt, ok := m.selectedWeeklyTask()
+		if !ok {
+			return m, nil
+		}
+		if vt.ListType == model.ListArchive {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
+		m.detailTask = vt.Task
+		m.detailField = detailFieldOrder[0]
+		m.detailFromView = viewWeeklyReview
+		m.detailFromList = vt.ListType
+		m.detailFromSgIdx = vt.SgIdx
+		m.detailIsProject = vt.IsProject
+		m.view = viewTaskDetail
+		return m, nil
+	case "R":
+		return m, m.loadWeeklyReview
+	case "1":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+	case "2":
+		m.view = viewList
+		m.currentList = model.ListSingleActions
+		m.cursor = 0
+		return m, m.loadCurrentList
+	case "3":
+		m.view = viewProjects
+		m.cursor = 0
+		return m, m.loadProjects
+	case "4", "V":
+		m.view = viewViews
+		return m, nil
+	case "tab":
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m, m.loadCurrentList
+	}
+
+	if m.weeklyReviewStep == weeklyStepProjects || m.weeklyReviewStep == weeklyStepArchived {
+		if m.weeklyReviewStep == weeklyStepArchived {
+			switch msg.String() {
+			case "d", "c", "s", "w", "A", "x":
+				m.statusMsg = "Archived tasks are read-only"
+				return m, m.clearStatusAfter()
+			}
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "d":
+		return m, m.weeklyTaskStateChange(model.StateDone)
+	case "c":
+		return m, m.weeklyTaskStateChange(model.StateCanceled)
+	case "s":
+		return m, m.weeklyTaskStateChange(model.StateSomeday)
+	case "w":
+		return m, m.weeklyTaskStateChange(model.StateWaitingFor)
+	case "A":
+		return m, m.weeklyTaskArchive()
+	case "x":
+		return m, m.weeklyTaskTrash()
+	}
+
+	return m, nil
+}
+
 // updateViewList handles keys in the saved view list screen.
 func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -3256,6 +3551,9 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.SetValue("")
 		cmd := m.input.Focus()
 		return m, cmd
+
+	case "W", "w":
+		return m, m.loadWeeklyReview
 
 	case "1":
 		m.view = viewList
@@ -3565,6 +3863,105 @@ func sourceBadge(source string) string {
 		return "[archive:" + name + "]"
 	}
 	return "[" + source + "]"
+}
+
+func (m Model) renderWeeklyReview(b *strings.Builder) {
+	b.WriteString(projectTitleStyle.Render("Weekly Review"))
+	b.WriteString("  ")
+	b.WriteString(helpStyle.Render("guided sweep of stale projects, waiting-for, someday, and recent archives"))
+	b.WriteString("\n\n")
+
+	sections := []struct {
+		step  weeklyReviewStep
+		count int
+	}{
+		{weeklyStepProjects, len(m.weeklyReviewData.ProjectsWithoutNextAction)},
+		{weeklyStepWaiting, len(m.weeklyReviewData.AgingWaitingFor)},
+		{weeklyStepSomeday, len(m.weeklyReviewData.SomedayMaybe)},
+		{weeklyStepArchived, len(m.weeklyReviewData.RecentArchived)},
+	}
+
+	for _, s := range sections {
+		label := fmt.Sprintf("%s (%d)", weeklyStepTitle(s.step), s.count)
+		if m.weeklyReviewStep == s.step {
+			b.WriteString(activeTabStyle.Render(" " + label + " "))
+		} else {
+			b.WriteString(inactiveTabStyle.Render(" " + label + " "))
+		}
+		b.WriteString(" ")
+	}
+	b.WriteString("\n\n")
+
+	if m.weeklyReviewStep == weeklyStepProjects {
+		if len(m.weeklyReviewData.ProjectsWithoutNextAction) == 0 {
+			b.WriteString(taskStyle.Render("No active projects missing a next action."))
+			b.WriteString("\n")
+			return
+		}
+		for i, p := range m.weeklyReviewData.ProjectsWithoutNextAction {
+			if i == m.weeklyReviewCursors[weeklyStepProjects] {
+				b.WriteString(cursorStyle.Render(" > "))
+				b.WriteString(selectedTaskStyle.Render(p.Title))
+			} else {
+				b.WriteString("   ")
+				b.WriteString(taskStyle.Render(p.Title))
+			}
+			meta := []string{stateStyle.Render(string(p.State)), helpStyle.Render(fmt.Sprintf("%d tasks", p.TaskCount))}
+			if p.Deadline != nil {
+				meta = append(meta, deadlineStyle.Render("due:"+p.Deadline.Format("2006-01-02")))
+			}
+			b.WriteString("  ")
+			b.WriteString(strings.Join(meta, " "))
+			b.WriteString("\n")
+		}
+		return
+	}
+
+	tasks := m.weeklyTasksForStep(m.weeklyReviewStep)
+	if len(tasks) == 0 {
+		b.WriteString(taskStyle.Render("Nothing to review in this section."))
+		b.WriteString("\n")
+		return
+	}
+
+	for i, vt := range tasks {
+		isSelected := i == m.weeklyReviewCursors[m.weeklyReviewStep]
+		if isSelected {
+			b.WriteString(cursorStyle.Render(" > "))
+		} else {
+			b.WriteString("   ")
+		}
+		checkbox := model.CheckboxFor(vt.Task.State)
+		switch checkbox {
+		case model.CheckboxDone:
+			b.WriteString(checkboxDoneStyle.Render(fmt.Sprintf("[x] %s", vt.Task.Text)))
+		case model.CheckboxCanceled:
+			b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", vt.Task.Text)))
+		default:
+			if isSelected {
+				b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", vt.Task.Text)))
+			} else {
+				b.WriteString(checkboxOpenStyle.Render("[ ] "))
+				b.WriteString(taskStyle.Render(vt.Task.Text))
+			}
+		}
+		var meta []string
+		if vt.Task.WaitingSince != nil && m.weeklyReviewStep == weeklyStepWaiting {
+			meta = append(meta, helpStyle.Render("since:"+vt.Task.WaitingSince.Format("2006-01-02")))
+		}
+		if vt.Task.ArchivedAt != nil && m.weeklyReviewStep == weeklyStepArchived {
+			meta = append(meta, helpStyle.Render("archived:"+vt.Task.ArchivedAt.Format("2006-01-02")))
+		}
+		for _, tag := range vt.Task.Tags {
+			meta = append(meta, tagStyle.Render(tag))
+		}
+		meta = append(meta, helpStyle.Render(sourceBadge(vt.Source)))
+		if len(meta) > 0 {
+			b.WriteString("  ")
+			b.WriteString(strings.Join(meta, " "))
+		}
+		b.WriteString("\n")
+	}
 }
 
 // renderViewList renders the saved view list screen.

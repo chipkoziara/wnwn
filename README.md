@@ -15,6 +15,7 @@ Runtime data is stored in SQLite, with first-class Markdown import/export for po
 - **Project editing** — rename projects (auto-renames the file), set state, deadline, URL, definition of done, and waiting-on
 - **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
 - **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
+- **Weekly Review mode** — guided multi-section sweep for stale projects, aging waiting-for, someday/maybe, and recent archives
 
 ### Task Lifecycle Semantics
 
@@ -180,6 +181,23 @@ Keybinding action names supported:
 | `ctrl+j` / `ctrl+k` | Reorder task within sub-group |
 | `m` | Move task to a different sub-group |
 | `esc` | Back to project list |
+
+### Views / Weekly Review
+
+| Key | Action |
+|-----|--------|
+| `4` / `V` | Open Views tab |
+| `enter` | Open selected saved view |
+| `/` | Run ad-hoc query |
+| `W` | Start guided Weekly Review mode |
+
+In Weekly Review mode:
+
+- `h`/`l` (or arrows) move between sections
+- `j`/`k` navigate items in a section
+- `enter` opens selected item (project detail or task detail)
+- `d`/`c`/`s`/`w`, `A`, `x` mutate active (non-archived) tasks directly
+- archived section is read-only
 
 ## Markdown Export Format
 
