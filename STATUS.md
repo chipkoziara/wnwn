@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 93 tests passing)
+### Data Layer (fully working, 94 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -47,7 +47,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - Legacy fallback: `$WNWN_DATA_DIR/config.toml`
   - `archive.auto_archive_done` / `archive.auto_archive_canceled`
   - `ui.default_view` (`inbox`, `actions`, `projects`, `views`)
-  - `keys.list`, `keys.project`, `keys.view_results` action remapping
+  - `keys.list`, `keys.project`, `keys.view_results` action remapping (including `cancel` and `trash`)
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:
@@ -66,6 +66,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `s`: set someday/maybe (refiles from inbox)
 - `w`: set waiting-for (refiles from inbox)
 - `d`: mark done (stays in list)
+- `c`: mark canceled (stays in list)
 - `A`: archive selected task
 - `x`: trash (permanent delete)
 
@@ -84,8 +85,9 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Single Actions view:**
 - `p`: refile to a project
-- `s`/`w`/`d`/`x`: state changes (same as inbox but updates in-place)
+- `s`/`w`/`d`/`c`: state changes (same as inbox but updates in-place)
 - `A`: archive selected task
+- `x`: trash (permanent delete)
 
 **Projects list view:**
 - Shows all projects with state, task count, deadline, next action preview
@@ -98,7 +100,9 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `d`: mark task done
+- `c`: mark task canceled
 - `A`: archive selected task
+- `x`: trash selected task (permanent delete)
 - `E`: open project edit view (edit metadata)
 - `ctrl+j`/`ctrl+k`: reorder task within sub-group (cursor follows)
 - `m`: move task to a different sub-group (picker)
@@ -119,9 +123,9 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Header shows view name and query string
 - `j`/`k`/`g`/`G`: navigate results
 - `enter`: open task detail (full edit; esc/save returns to view results and refreshes)
-- `d`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
+- `d`/`c`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
 - `A`: archive selected task (source-aware); view refreshes automatically
-- `x`: trash (list tasks) or cancel (project tasks); view refreshes
+- `x`: trash (permanent delete for both list and project tasks); view refreshes
 - `R`: manual refresh (re-collect and re-filter)
 - `esc`: back to view list
 - Archive view is read-only: opening detail or mutating state on archived rows is blocked with a status message
@@ -209,7 +213,7 @@ Prioritized by impact:
 14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (93 total: 8 parser + 42 query + 35 service + 3 writer/parser roundtrip + 2 sqlite store + 3 config).
+- None currently open. All tests pass (94 total: 8 parser + 42 query + 36 service + 3 writer/parser roundtrip + 2 sqlite store + 3 config).
 
 ---
 
@@ -239,7 +243,7 @@ Built and shipped in session 4. Key design decisions:
 - **Relative date tokens** — `today`, `tomorrow`, `Nd` (e.g. `7d`) are resolved to midnight local time at query execution time. This makes the "Overdue" and "Due This Week" default views work correctly every day without user intervention.
 - **`CollectAllTasks()`** — stateless read of all active sources. Returns `[]ViewTask` with `Source`, `SgIdx`, `Filename`, `ListType`, `IsProject` so callers can route mutations back to the correct service method.
 - **`viewViews` / `viewViewResults`** — two new view states added to the existing `viewState` enum. `viewViews` renders the saved view list; `viewViewResults` renders filtered results. Both share the existing tab bar (extended to 4 tabs) and key routing infrastructure.
-- **Source-aware state changes** — `d`/`s`/`w`/`x` in view results call `UpdateProjectTaskState` (for project tasks) or `UpdateState`/`TrashTask` (for list tasks) based on `ViewTask.IsProject`. After any mutation the query is re-run to refresh the results in-place.
+- **Source-aware state changes** — `d`/`c`/`s`/`w` in view results call `UpdateProjectTaskState` (for project tasks) or `UpdateState` (for list tasks), while `x` now always performs permanent delete (`TrashProjectTask` / `TrashTask`). After any mutation the query is re-run to refresh the results in-place.
 - **Task detail routing** — opening task detail from view results sets `detailFromView = viewViewResults`. On save (`saveDetailTask`), the function returns a `viewResultsLoadedMsg` (re-collect + re-filter) instead of `taskUpdatedMsg`, so the view refreshes automatically. On esc (discard), `updateTaskDetail` detects `viewViewResults` and re-runs the query.
 - **Ad-hoc queries** — `/` from the view list activates `modeEditingField` within `viewViews`. The `updateViewList` handler forwards key events to the text input and on `enter` calls `runQuery("Ad-hoc", queryStr)`.
 - **Default views remain built-in** — `model.DefaultViews()` still returns built-ins; persistence of user-defined saved views in config remains deferred.

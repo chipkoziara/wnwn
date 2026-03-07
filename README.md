@@ -96,24 +96,30 @@ default_view = "inbox" # inbox | actions | projects | views
 
 [keys.list]
 done = "d"
+cancel = "c"
 archive = "A"
+trash = "x"
 process = "P"
 
 [keys.project]
 done = "d"
+cancel = "c"
 archive = "A"
+trash = "x"
 
 [keys.view_results]
 done = "d"
+cancel = "c"
 archive = "A"
+trash = "x"
 refresh = "R"
 ```
 
 Keybinding action names supported:
 
-- `keys.list`: `add`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `archive`, `trash`, `process`
-- `keys.project`: `add_task`, `add_subgroup`, `done`, `archive`, `move_subgroup`
-- `keys.view_results`: `done`, `someday`, `waiting`, `archive`, `trash`, `refresh`
+- `keys.list`: `add`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `cancel`, `archive`, `trash`, `process`
+- `keys.project`: `add_task`, `add_subgroup`, `done`, `cancel`, `archive`, `trash`, `move_subgroup`
+- `keys.view_results`: `done`, `cancel`, `someday`, `waiting`, `archive`, `trash`, `refresh`
 
 ## Keyboard Shortcuts
 
@@ -137,6 +143,7 @@ Keybinding action names supported:
 | `s` | Set someday/maybe |
 | `w` | Set waiting-for |
 | `d` | Mark done (stays in list) |
+| `c` | Mark canceled (stays in list) |
 | `A` | Archive selected task |
 | `x` | Trash (permanent delete) |
 
@@ -146,7 +153,8 @@ Keybinding action names supported:
 |-----|--------|
 | `enter` | Open task detail / edit view |
 | `p` | Refile to a project |
-| `s` / `w` / `d` / `x` | State changes (same as Inbox) |
+| `s` / `w` / `d` / `c` | State changes (same as Inbox) |
+| `x` | Trash (permanent delete) |
 | `A` | Archive selected task |
 
 ### Projects
@@ -165,7 +173,9 @@ Keybinding action names supported:
 | `a` | Add task to current sub-group |
 | `n` | Add new sub-group |
 | `d` | Mark task done |
+| `c` | Mark task canceled |
 | `A` | Archive selected task |
+| `x` | Trash selected task (permanent delete) |
 | `E` | Edit project metadata |
 | `ctrl+j` / `ctrl+k` | Reorder task within sub-group |
 | `m` | Move task to a different sub-group |

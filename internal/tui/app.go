@@ -249,6 +249,7 @@ var defaultKeybindings = map[string]map[string]string{
 		"someday":        "s",
 		"waiting":        "w",
 		"done":           "d",
+		"cancel":         "c",
 		"archive":        "A",
 		"trash":          "x",
 		"process":        "P",
@@ -257,11 +258,14 @@ var defaultKeybindings = map[string]map[string]string{
 		"add_task":      "a",
 		"add_subgroup":  "n",
 		"done":          "d",
+		"cancel":        "c",
 		"archive":       "A",
+		"trash":         "x",
 		"move_subgroup": "m",
 	},
 	"view_results": {
 		"done":    "d",
+		"cancel":  "c",
 		"someday": "s",
 		"waiting": "w",
 		"archive": "A",
@@ -751,6 +755,14 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
+			return m, m.loadCurrentList
+		}
+
+	// Mark canceled.
+	case "c":
+		if m.list != nil && len(m.list.Tasks) > 0 {
+			task := m.list.Tasks[m.cursor]
+			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled)
 			return m, m.loadCurrentList
 		}
 
@@ -1317,6 +1329,16 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case "c":
+		// Mark task canceled.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled)
+				return m, m.reloadProjectDetail()
+			}
+		}
+
 	case "A":
 		// Archive selected project task.
 		if len(flatItems) > 0 {
@@ -1325,6 +1347,16 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				_ = m.svc.ArchiveProjectTask(m.activeFilename, item.sgIdx, item.task.ID)
 				m.statusMsg = "Task archived"
 				return m, tea.Batch(m.reloadProjectDetail(), m.clearStatusAfter())
+			}
+		}
+
+	case "x":
+		// Permanently delete selected project task.
+		if len(flatItems) > 0 {
+			item := flatItems[m.projCursor]
+			if item.isTask {
+				_ = m.svc.TrashProjectTask(m.activeFilename, item.sgIdx, item.task.ID)
+				return m, m.reloadProjectDetail()
 			}
 		}
 
@@ -2856,7 +2888,7 @@ func (m Model) helpText() string {
 		return "enter: open view  /: ad-hoc query  j/k: navigate  1-4/tab: switch tab  q: quit"
 	}
 	if m.view == viewViewResults {
-		return "enter: task detail  d: done  s: someday  w: waiting  A: archive  x: trash  R: refresh  esc: back  j/k: navigate"
+		return "enter: task detail  d: done  c: canceled  s: someday  w: waiting  A: archive  x: trash  R: refresh  esc: back  j/k: navigate"
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -2865,12 +2897,12 @@ func (m Model) helpText() string {
 	case viewProjects:
 		return "enter: open  a: new project  E: edit project  " + nav
 	case viewProjectDetail:
-		return "enter: detail  a: add task  n: new sub-group  d: done  A: archive  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
+		return "enter: detail  a: add task  n: new sub-group  d: done  c: canceled  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
 	default:
 		if m.currentList == model.ListIn {
-			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  A: archive  x: trash  " + nav
+			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  c: canceled  A: archive  x: trash  " + nav
 		}
-		return "enter: detail  p: to project  s: someday  w: waiting  d: done  A: archive  x: trash  " + nav
+		return "enter: detail  p: to project  s: someday  w: waiting  d: done  c: canceled  A: archive  x: trash  " + nav
 	}
 }
 
@@ -3338,6 +3370,13 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.viewResultStateChange(model.StateDone)
 
+	case "c":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
+		return m, m.viewResultStateChange(model.StateCanceled)
+
 	case "s":
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
@@ -3448,8 +3487,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 	return func() tea.Msg {
 		var err error
 		if vt.IsProject {
-			// No TrashProjectTask method yet — use UpdateProjectTaskState to canceled.
-			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, model.StateCanceled)
+			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
 			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
 		}

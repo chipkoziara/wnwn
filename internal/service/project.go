@@ -280,7 +280,7 @@ func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated 
 	return svc.Store.WriteProject(proj)
 }
 
-// ArchiveProjectTask moves a task from a project sub-group into monthly archive.
+// ArchiveProjectTask moves a task from a project sub-group into archive storage.
 func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID string) error {
 	proj, err := svc.Store.ReadProject(filename)
 	if err != nil {
@@ -301,6 +301,27 @@ func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID 
 	task.Source = fmt.Sprintf("projects/%s", filename)
 	if err := svc.archiveTask(task); err != nil {
 		return fmt.Errorf("archiving task: %w", err)
+	}
+
+	sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
+// TrashProjectTask permanently removes a task from a project sub-group.
+func (svc *Service) TrashProjectTask(filename string, subGroupIdx int, taskID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+
+	sg := &proj.SubGroups[subGroupIdx]
+	idx := findTaskIndex(sg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
 	}
 
 	sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)

@@ -298,6 +298,33 @@ func TestUpdateProjectTaskStateAutoArchiveWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestTrashProjectTask(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := svc.AddTaskToProject("my-project.md", 0, "Trash this task", model.StateNextAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.TrashProjectTask("my-project.md", 0, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := s.ReadProject("my-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proj.SubGroups[0].Tasks) != 0 {
+		t.Fatalf("project has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
+	}
+}
+
 func TestListProjectsSummaryWithNextAction(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)
