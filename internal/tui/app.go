@@ -1853,11 +1853,41 @@ func (m Model) View() tea.View {
 
 	// Help bar.
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("  " + m.helpText()))
-	b.WriteString("\n")
+	helpWidth := m.width - 4
+	if helpWidth < 24 {
+		helpWidth = 24
+	}
+	for _, line := range wrapText(m.helpText(), helpWidth) {
+		b.WriteString(helpStyle.Render("  " + line))
+		b.WriteString("\n")
+	}
 
 	v.SetContent(b.String())
 	return v
+}
+
+func wrapText(text string, width int) []string {
+	if width <= 0 || len(text) <= width {
+		return []string{text}
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return []string{text}
+	}
+
+	lines := make([]string, 0, 4)
+	line := words[0]
+	for _, w := range words[1:] {
+		if len(line)+1+len(w) <= width {
+			line += " " + w
+			continue
+		}
+		lines = append(lines, line)
+		line = w
+	}
+	lines = append(lines, line)
+	return lines
 }
 
 // renderListView renders the task list (inbox or single-actions).
