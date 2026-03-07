@@ -3052,7 +3052,12 @@ func (m Model) runQuery(name, queryStr string) tea.Cmd {
 		if err != nil {
 			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
 		}
-		all, err := m.svc.CollectAllTasks()
+		var all []service.ViewTask
+		if strings.EqualFold(name, "Archives") {
+			all, err = m.svc.CollectArchiveTasks()
+		} else {
+			all, err = m.svc.CollectAllTasks()
+		}
 		if err != nil {
 			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
 		}
@@ -3195,6 +3200,10 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		vt := m.viewResults[m.viewCursor]
+		if vt.ListType == model.ListArchive {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		m.detailTask = vt.Task
 		m.detailField = fieldText
 		m.detailFromView = viewViewResults
@@ -3213,18 +3222,38 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.runQuery(m.activeViewName, m.activeViewQuery)
 
 	case "d":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		return m, m.viewResultStateChange(model.StateDone)
 
 	case "s":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		return m, m.viewResultStateChange(model.StateSomeday)
 
 	case "w":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		return m, m.viewResultStateChange(model.StateWaitingFor)
 
 	case "x":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		return m, m.viewResultTrash()
 
 	case "A":
+		if m.selectedViewResultIsArchived() {
+			m.statusMsg = "Archived tasks are read-only"
+			return m, m.clearStatusAfter()
+		}
 		return m, m.viewResultArchive()
 
 	case "1":
@@ -3254,6 +3283,13 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) selectedViewResultIsArchived() bool {
+	if len(m.viewResults) == 0 || m.viewCursor < 0 || m.viewCursor >= len(m.viewResults) {
+		return false
+	}
+	return m.viewResults[m.viewCursor].ListType == model.ListArchive
 }
 
 // viewResultStateChange applies a state change to the selected view result task
@@ -3373,6 +3409,10 @@ func sourceBadge(source string) string {
 			name = name[:15] + "..."
 		}
 		return "[" + name + "]"
+	}
+	if after, ok := strings.CutPrefix(source, "archive/"); ok {
+		name := strings.TrimSuffix(after, ".md")
+		return "[archive:" + name + "]"
 	}
 	return "[" + source + "]"
 }

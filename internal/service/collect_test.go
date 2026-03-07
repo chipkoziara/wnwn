@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/wnwn/wnwn/internal/model"
@@ -150,5 +151,49 @@ func TestCollectAllTasks_SourceFormat(t *testing.T) {
 				t.Errorf("project source = %q, want %q", vt.Source, expected)
 			}
 		}
+	}
+}
+
+func TestCollectArchiveTasks_Empty(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	results, err := svc.CollectArchiveTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 archive tasks, got %d", len(results))
+	}
+}
+
+func TestCollectArchiveTasks_WithData(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	// Add task and explicitly archive it.
+	task, err := svc.AddToInbox("Archive test task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ArchiveTask(model.ListSingleActions, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := svc.CollectArchiveTasks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 archive task, got %d", len(results))
+	}
+	if results[0].ListType != model.ListArchive {
+		t.Errorf("ListType = %q, want archive", results[0].ListType)
+	}
+	if !strings.HasPrefix(results[0].Source, "archive/") {
+		t.Errorf("unexpected source %q", results[0].Source)
 	}
 }

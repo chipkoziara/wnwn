@@ -47,6 +47,22 @@ wnwn add "Write report" --scheduled 2026-03-10 --notes "Focus on Q1 numbers"
 
 Tasks added via CLI land in your inbox for later processing.
 
+### Markdown import/export
+
+```bash
+# Export current SQLite data to Markdown files
+wnwn export-md --out /tmp/wnwn-export
+
+# Preview import plan without writing
+wnwn import-md --from /tmp/wnwn-export --dry-run
+
+# Merge import (adds missing tasks/projects by ID/filename)
+wnwn import-md --from /tmp/wnwn-export --mode merge
+
+# Replace import (reset DB, then import all markdown data)
+wnwn import-md --from /tmp/wnwn-export --replace
+```
+
 ### Configuration
 
 Set `WNWN_DATA_DIR` to choose where task files are stored (default: `~/.local/share/wnwn`):
@@ -175,6 +191,9 @@ go test ./...
 
 # Build
 go build -o wnwn ./cmd/wnwn/
+
+# Rebuild + replace import from bundled test data
+go build -o wnwn ./cmd/wnwn/ && ./wnwn import-md --from ./testdata --replace
 
 # Test with a throwaway data directory
 WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn

@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 84 tests passing)
+### Data Layer (fully working, 86 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -27,6 +27,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 	- Archiving: monthly archive files with source tracking
 	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields and auto-set waiting_since when entering waiting-for
 	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
+	  - **Archive aggregation**: `CollectArchiveTasks()` reads monthly archive files and returns archive `[]ViewTask` entries for the dedicated Archives view
 
 ### CLI (`cmd/wnwn/main.go`)
 - `wnwn` (no args): launches TUI
@@ -98,7 +99,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
 
 **Views tab** (`4` or `V` from anywhere, or tab from Projects):
-- Lists the 5 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week)
+- Lists the 6 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Archives)
 - `enter`: open a view — collects all tasks and filters via the query DSL
 - `/`: ad-hoc query input — type any DSL query, enter to run
 - `j`/`k`/`g`/`G`: navigate the view list
@@ -114,6 +115,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `x`: trash (list tasks) or cancel (project tasks); view refreshes
 - `R`: manual refresh (re-collect and re-filter)
 - `esc`: back to view list
+- Archive view is read-only: opening detail or mutating state on archived rows is blocked with a status message
 
 **Project edit view** (`viewProjectEdit`, opened with `E` from project list or detail):
 - Navigable field list: title, state, tags, deadline, URL, definition of done
@@ -198,7 +200,7 @@ Prioritized by impact:
 14. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (84 total: 8 parser + 42 query + 29 service + 3 writer/parser roundtrip + 2 sqlite store).
+- None currently open. All tests pass (86 total: 8 parser + 42 query + 31 service + 3 writer/parser roundtrip + 2 sqlite store).
 
 ---
 

@@ -304,6 +304,37 @@ func (svc *Service) CollectAllTasks() ([]ViewTask, error) {
 	return results, nil
 }
 
+// CollectArchiveTasks reads all archive files and returns every archived task
+// with provenance metadata for archive-focused views.
+func (svc *Service) CollectArchiveTasks() ([]ViewTask, error) {
+	var results []ViewTask
+
+	archiveFiles, err := svc.Store.ListArchives()
+	if err != nil {
+		return nil, fmt.Errorf("listing archives: %w", err)
+	}
+
+	for _, filename := range archiveFiles {
+		archive, err := svc.Store.ReadArchive(filename)
+		if err != nil {
+			return nil, fmt.Errorf("reading archive %s: %w", filename, err)
+		}
+		source := "archive/" + filename
+		for _, task := range archive.Tasks {
+			results = append(results, ViewTask{
+				Task:      task,
+				Source:    source,
+				SgIdx:     -1,
+				Filename:  filename,
+				ListType:  model.ListArchive,
+				IsProject: false,
+			})
+		}
+	}
+
+	return results, nil
+}
+
 // WithWaitingOn sets who/what the task is waiting on and automatically sets waiting-for state.
 func WithWaitingOn(person string) TaskOption {
 	return func(task *model.Task) {
