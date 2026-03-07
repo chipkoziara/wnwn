@@ -368,22 +368,6 @@ func (m Model) actionDisabled(scope, action string) bool {
 	return actions[action]
 }
 
-func (m Model) keyDisabled(scope, raw string) bool {
-	actions, ok := defaultKeybindings[scope]
-	if !ok {
-		return false
-	}
-	for action, defaultKey := range actions {
-		configuredKey := m.keybindings[scope][action]
-		if raw == defaultKey || raw == configuredKey {
-			if m.actionDisabled(scope, action) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // loadCurrentList is a tea.Cmd that reads the current list from disk.
 func (m Model) loadCurrentList() tea.Msg {
 	if err := m.store.Init(); err != nil {
@@ -826,10 +810,6 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.datePicker.Open(initial)
 		}
 	}
-	if m.keyDisabled("list", raw) {
-		return m, nil
-	}
-
 	key := m.remapKey("list", raw)
 	switch key {
 	case "q", "ctrl+c":
@@ -932,6 +912,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Direct someday alias.
 	case "m":
+		if m.actionDisabled("list", "someday") {
+			return m, nil
+		}
 		if m.list == nil || len(m.list.Tasks) == 0 {
 			return m, nil
 		}
@@ -944,6 +927,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Refile to a project (from inbox or single-actions).
 	case "p":
+		if m.actionDisabled("list", "refile_project") {
+			return m, nil
+		}
 		if m.list == nil || len(m.list.Tasks) == 0 {
 			return m, nil
 		}
@@ -957,6 +943,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Set to waiting-for.
 	case "w":
+		if m.actionDisabled("list", "waiting") {
+			return m, nil
+		}
 		if m.list == nil || len(m.list.Tasks) == 0 {
 			return m, nil
 		}
@@ -965,6 +954,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Mark done.
 	case "d":
+		if m.actionDisabled("list", "done") {
+			return m, nil
+		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
@@ -973,6 +965,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Mark canceled.
 	case "c":
+		if m.actionDisabled("list", "cancel") {
+			return m, nil
+		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled)
@@ -981,6 +976,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Archive task.
 	case "A":
+		if m.actionDisabled("list", "archive") {
+			return m, nil
+		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.ArchiveTask(m.list.Type, task.ID)
@@ -990,6 +988,9 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	// Trash task.
 	case "x":
+		if m.actionDisabled("list", "trash") {
+			return m, nil
+		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			_ = m.svc.TrashTask(m.list.Type, task.ID)
@@ -1530,10 +1531,6 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cancelPrefix()
 		}
 	}
-	if m.keyDisabled("project", raw) {
-		return m, nil
-	}
-
 	key := m.remapKey("project", raw)
 
 	switch key {
@@ -1605,6 +1602,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.beginPrefix(prefixTime)
 
 	case "d":
+		if m.actionDisabled("project", "done") {
+			return m, nil
+		}
 		// Mark task done.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -1615,6 +1615,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "c":
+		if m.actionDisabled("project", "cancel") {
+			return m, nil
+		}
 		// Mark task canceled.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -1625,6 +1628,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "A":
+		if m.actionDisabled("project", "archive") {
+			return m, nil
+		}
 		// Archive selected project task.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -1636,6 +1642,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "x":
+		if m.actionDisabled("project", "trash") {
+			return m, nil
+		}
 		// Permanently delete selected project task.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -1678,6 +1687,9 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "m":
+		if m.actionDisabled("project", "move_subgroup") {
+			return m, nil
+		}
 		// Move task to a different sub-group.
 		if m.activeProject == nil || len(m.activeProject.SubGroups) < 2 {
 			m.statusMsg = "Need at least 2 sub-groups to move between"
@@ -3220,7 +3232,35 @@ func (m Model) helpText() string {
 		if m.pendingPrefix == prefixTime {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
-		return "e: detail  s: state-prefix  m: someday  t: time-prefix  d/c/w: quick states  A: archive  x: trash  R: refresh  esc: back"
+		parts := []string{"e: detail", "s: state-prefix", "t: time-prefix"}
+		quick := []string{}
+		if !m.actionDisabled("view_results", "done") {
+			quick = append(quick, "d")
+		}
+		if !m.actionDisabled("view_results", "cancel") {
+			quick = append(quick, "c")
+		}
+		if !m.actionDisabled("view_results", "waiting") {
+			quick = append(quick, "w")
+		}
+		if !m.actionDisabled("view_results", "someday") {
+			parts = append(parts, "m: someday")
+			quick = append(quick, "m")
+		}
+		if len(quick) > 0 {
+			parts = append(parts, strings.Join(quick, "/")+": quick states")
+		}
+		if !m.actionDisabled("view_results", "archive") {
+			parts = append(parts, "A: archive")
+		}
+		if !m.actionDisabled("view_results", "trash") {
+			parts = append(parts, "x: trash")
+		}
+		if !m.actionDisabled("view_results", "refresh") {
+			parts = append(parts, "R: refresh")
+		}
+		parts = append(parts, "esc: back")
+		return strings.Join(parts, "  ")
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -3235,7 +3275,29 @@ func (m Model) helpText() string {
 		if m.pendingPrefix == prefixTime {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
-		return "e: detail  a: add task  n: new sub-group  s: state-prefix  t: time-prefix  d/c/w: quick states  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move  esc: back"
+		parts := []string{"e: detail", "a: add task", "n: new sub-group", "s: state-prefix", "t: time-prefix"}
+		quick := []string{}
+		if !m.actionDisabled("project", "done") {
+			quick = append(quick, "d")
+		}
+		if !m.actionDisabled("project", "cancel") {
+			quick = append(quick, "c")
+		}
+		if len(quick) > 0 {
+			parts = append(parts, strings.Join(quick, "/")+": quick states")
+		}
+		if !m.actionDisabled("project", "archive") {
+			parts = append(parts, "A: archive")
+		}
+		if !m.actionDisabled("project", "trash") {
+			parts = append(parts, "x: trash")
+		}
+		parts = append(parts, "E: edit project", "C-j/C-k: reorder")
+		if !m.actionDisabled("project", "move_subgroup") {
+			parts = append(parts, "m: move")
+		}
+		parts = append(parts, "esc: back")
+		return strings.Join(parts, "  ")
 	default:
 		if m.pendingPrefix == prefixState {
 			return "state -> d: done  c: canceled  w: waiting-for  m: someday  esc: cancel"
@@ -3247,9 +3309,63 @@ func (m Model) helpText() string {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
 		if m.currentList == model.ListIn {
-			return "e: detail  a: add  P: process  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
+			parts := []string{"e: detail", "a: add", "P: process", "s: state-prefix", "r: route-prefix", "t: time-prefix"}
+			if !m.actionDisabled("list", "refile_project") {
+				parts = append(parts, "p: to project")
+			}
+			quick := []string{}
+			if !m.actionDisabled("list", "someday") {
+				parts = append(parts, "m: someday")
+				quick = append(quick, "m")
+			}
+			if !m.actionDisabled("list", "done") {
+				quick = append(quick, "d")
+			}
+			if !m.actionDisabled("list", "cancel") {
+				quick = append(quick, "c")
+			}
+			if !m.actionDisabled("list", "waiting") {
+				quick = append(quick, "w")
+			}
+			if len(quick) > 0 {
+				parts = append(parts, strings.Join(quick, "/")+": quick states")
+			}
+			if !m.actionDisabled("list", "archive") {
+				parts = append(parts, "A: archive")
+			}
+			if !m.actionDisabled("list", "trash") {
+				parts = append(parts, "x: trash")
+			}
+			return strings.Join(parts, "  ") + "  " + nav
 		}
-		return "e: detail  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
+		parts := []string{"e: detail", "s: state-prefix", "r: route-prefix", "t: time-prefix"}
+		if !m.actionDisabled("list", "refile_project") {
+			parts = append(parts, "p: to project")
+		}
+		quick := []string{}
+		if !m.actionDisabled("list", "someday") {
+			parts = append(parts, "m: someday")
+			quick = append(quick, "m")
+		}
+		if !m.actionDisabled("list", "done") {
+			quick = append(quick, "d")
+		}
+		if !m.actionDisabled("list", "cancel") {
+			quick = append(quick, "c")
+		}
+		if !m.actionDisabled("list", "waiting") {
+			quick = append(quick, "w")
+		}
+		if len(quick) > 0 {
+			parts = append(parts, strings.Join(quick, "/")+": quick states")
+		}
+		if !m.actionDisabled("list", "archive") {
+			parts = append(parts, "A: archive")
+		}
+		if !m.actionDisabled("list", "trash") {
+			parts = append(parts, "x: trash")
+		}
+		return strings.Join(parts, "  ") + "  " + nav
 	}
 }
 
@@ -3964,10 +4080,6 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.cancelPrefix()
 		}
 	}
-	if m.keyDisabled("view_results", raw) {
-		return m, nil
-	}
-
 	key := m.remapKey("view_results", raw)
 	switch key {
 	case "q", "ctrl+c":
@@ -4018,10 +4130,16 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "R":
+		if m.actionDisabled("view_results", "refresh") {
+			return m, nil
+		}
 		// Refresh: re-run the current query.
 		return m, m.runQuery(m.activeViewName, m.activeViewQuery)
 
 	case "d":
+		if m.actionDisabled("view_results", "done") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
@@ -4029,6 +4147,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.viewResultStateChange(model.StateDone)
 
 	case "c":
+		if m.actionDisabled("view_results", "cancel") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
@@ -4039,6 +4160,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.beginPrefix(prefixState)
 
 	case "m":
+		if m.actionDisabled("view_results", "someday") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
@@ -4049,6 +4173,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.beginPrefix(prefixTime)
 
 	case "w":
+		if m.actionDisabled("view_results", "waiting") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
@@ -4056,6 +4183,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.viewResultStateChange(model.StateWaitingFor)
 
 	case "x":
+		if m.actionDisabled("view_results", "trash") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
@@ -4063,6 +4193,9 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.viewResultTrash()
 
 	case "A":
+		if m.actionDisabled("view_results", "archive") {
+			return m, nil
+		}
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
