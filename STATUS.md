@@ -23,6 +23,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - Inbox: add tasks with functional options (WithDeadline, WithTags, etc.)
   - State transitions: auto-sets waiting_since. done/canceled now stay in place by default.
   - Explicit archiving: `ArchiveTask` (list tasks) and `ArchiveProjectTask` (project tasks) move items into archive storage on demand.
+  - Trash semantics: trashed tasks are permanently deleted and are not archived.
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
 	- Archiving: archived task records include source tracking and `archived_at` timestamp

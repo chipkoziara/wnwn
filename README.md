@@ -16,6 +16,12 @@ Runtime data is stored in SQLite, with first-class Markdown import/export for po
 - **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
 - **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
 
+### Task Lifecycle Semantics
+
+- `done` / `canceled` are **state changes** (what happened to the task)
+- `archive` is a **location change** (move completed/abandoned tasks out of active working lists)
+- `trash` is a **hard delete** (remove permanently, not archived)
+
 ## Installation
 
 Requires Go 1.25+ (project uses [mise](https://mise.jdx.dev/) to manage the Go version).
@@ -205,6 +211,8 @@ Imported/exported Markdown tasks use checkbox items with YAML metadata blocks:
 | `some-day/maybe` | `- [ ]` | Tasks & Projects | Deferred, not committed |
 | `done` | `- [x]` | Tasks & Projects | Completed |
 | `canceled` | `- [-]` | Tasks & Projects | Abandoned |
+
+Practical rule of thumb: use `canceled` when the history matters, `trash` when the task was noise/mistake, and `archive` when you're done reviewing an item in active lists.
 
 ### Task Attributes
 

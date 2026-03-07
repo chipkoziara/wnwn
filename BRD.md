@@ -121,6 +121,7 @@ Runtime storage uses SQLite for speed and reliability, with Markdown import/expo
 ### Archiving
 - Marking a task `done` or `canceled` does **not** auto-archive by default; it remains in its current list/project until explicitly archived
 - Users archive tasks via an explicit archive action in the UI/CLI
+- Trash is distinct from canceled/archive: trashed tasks are permanently deleted and are not retained in archive history
 - Future configuration may allow enabling auto-archive behavior for users who prefer it
 - Archived tasks include `archived_at` metadata (timestamp of explicit archive action) and are not grouped by month in runtime storage.
 - Each archived task includes a `source` field in its metadata indicating where it came from (e.g. `source: single-actions`, `source: projects/launch-website`)
