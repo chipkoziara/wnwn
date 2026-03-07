@@ -1,8 +1,6 @@
 package service
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -225,7 +223,7 @@ func TestArchiveTask(t *testing.T) {
 		t.Fatalf("single-actions has %d tasks, want 0", len(sa.Tasks))
 	}
 
-	archiveFile := time.Now().Format("2006-01") + ".md"
+	archiveFile := "archive.md"
 	archive, err := s.ReadArchive(archiveFile)
 	if err != nil {
 		t.Fatal(err)
@@ -238,6 +236,9 @@ func TestArchiveTask(t *testing.T) {
 	}
 	if archive.Tasks[0].Source != "single-actions" {
 		t.Errorf("archived source = %q, want single-actions", archive.Tasks[0].Source)
+	}
+	if archive.Tasks[0].ArchivedAt == nil {
+		t.Error("ArchivedAt is nil, expected archive timestamp")
 	}
 }
 
@@ -264,10 +265,9 @@ func TestTrashTask(t *testing.T) {
 	}
 
 	// Should NOT be in archive.
-	archiveFile := time.Now().Format("2006-01") + ".md"
-	archivePath := filepath.Join(s.Root, "archive", archiveFile)
-	if _, err := os.Stat(archivePath); err == nil {
-		t.Error("archive file exists, but trashed tasks should not be archived")
+	archive, err := s.ReadArchive("archive.md")
+	if err == nil && len(archive.Tasks) > 0 {
+		t.Errorf("archive has %d tasks, want 0", len(archive.Tasks))
 	}
 }
 

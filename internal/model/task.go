@@ -64,6 +64,9 @@ type Task struct {
 	// Source is set when a task is archived, recording where it came from.
 	Source string `yaml:"source,omitempty"`
 
+	// ArchivedAt records when the task was explicitly archived.
+	ArchivedAt *time.Time `yaml:"archived_at,omitempty"`
+
 	// Notes is free-form Markdown prose, stored below the YAML block.
 	// Not part of the YAML metadata itself.
 	Notes string `yaml:"-"`

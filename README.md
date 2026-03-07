@@ -127,9 +127,9 @@ export WNWN_DATA_DIR=~/Dropbox/wnwn
 | `m` | Move task to a different sub-group |
 | `esc` | Back to project list |
 
-## File Format
+## Markdown Export Format
 
-Tasks are stored as Markdown checkboxes with YAML metadata blocks:
+Imported/exported Markdown tasks use checkbox items with YAML metadata blocks:
 
 ```markdown
 - [ ] Book flights to/from Hawaii
@@ -152,8 +152,8 @@ Tasks are stored as Markdown checkboxes with YAML metadata blocks:
   single-actions.md      # standalone next actions
   projects/              # one .md file per project
     launch-website.md
-  archive/               # monthly archives
-    2026-03.md
+  archive/               # archived tasks export
+    archive.md
 ```
 
 ### Task States

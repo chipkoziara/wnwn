@@ -1,7 +1,6 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/wnwn/wnwn/internal/model"
@@ -193,7 +192,10 @@ func TestCollectArchiveTasks_WithData(t *testing.T) {
 	if results[0].ListType != model.ListArchive {
 		t.Errorf("ListType = %q, want archive", results[0].ListType)
 	}
-	if !strings.HasPrefix(results[0].Source, "archive/") {
+	if results[0].Source != "archive" {
 		t.Errorf("unexpected source %q", results[0].Source)
+	}
+	if results[0].Task.ArchivedAt == nil {
+		t.Error("ArchivedAt is nil, expected archive timestamp")
 	}
 }

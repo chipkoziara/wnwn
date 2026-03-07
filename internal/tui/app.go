@@ -3401,6 +3401,8 @@ func sourceBadge(source string) string {
 		return "[inbox]"
 	case "single-actions":
 		return "[actions]"
+	case "archive":
+		return "[archive]"
 	}
 	// projects/launch-website.md → [launch-website]
 	if after, ok := strings.CutPrefix(source, "projects/"); ok {

@@ -5,6 +5,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/wnwn/wnwn/internal/id"
@@ -175,16 +176,17 @@ func (svc *Service) TrashTask(listType model.ListType, taskID string) error {
 	return svc.Store.WriteList(list)
 }
 
-// archiveTask appends a task to the appropriate monthly archive file.
+// archiveTask appends a task to the unified archive collection.
 func (svc *Service) archiveTask(task model.Task) error {
-	now := time.Now()
-	filename := now.Format("2006-01") + ".md"
+	now := time.Now().Truncate(time.Second)
+	filename := "archive.md"
+	task.ArchivedAt = &now
 
 	archive, err := svc.Store.ReadArchive(filename)
 	if err != nil {
 		// File doesn't exist yet — create it.
 		archive = &model.TaskList{
-			Title: "Archive " + now.Format("January 2006"),
+			Title: "Archive",
 			Type:  model.ListArchive,
 		}
 	}
@@ -319,7 +321,7 @@ func (svc *Service) CollectArchiveTasks() ([]ViewTask, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading archive %s: %w", filename, err)
 		}
-		source := "archive/" + filename
+		source := "archive"
 		for _, task := range archive.Tasks {
 			results = append(results, ViewTask{
 				Task:      task,
@@ -331,6 +333,21 @@ func (svc *Service) CollectArchiveTasks() ([]ViewTask, error) {
 			})
 		}
 	}
+
+	sort.Slice(results, func(i, j int) bool {
+		ai := results[i].Task.ArchivedAt
+		aj := results[j].Task.ArchivedAt
+		if ai == nil && aj == nil {
+			return results[i].Task.Created.After(results[j].Task.Created)
+		}
+		if ai == nil {
+			return false
+		}
+		if aj == nil {
+			return true
+		}
+		return ai.After(*aj)
+	})
 
 	return results, nil
 }

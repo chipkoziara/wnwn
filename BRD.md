@@ -109,20 +109,20 @@ We start the app with a view on the "in" list and an easy way to add tasks quick
 
 ## 4. Data Format Specification
 
-We adhere to "File Over App" where the tasks and projects should all be stored in plain text files (Markdown). We may choose to augment the markdown files with a SQLite layer to improve speed, reliability, and unlock better workflows (e.g. faster views).
+Runtime storage uses SQLite for speed and reliability, with Markdown import/export as a first-class interoperability format.
 
-### File Layout
+### Markdown Interchange Layout
 - `in.md` — the inbox list
 - `single-actions.md` — standalone next actions
 - `projects/` — a directory containing one `.md` file per project
-- `archive/` — a directory containing completed/canceled tasks organized by month (e.g. `archive/2026-03.md`)
+- `archive/archive.md` — archived tasks in a single export file
 - Each task has a stable ULID (Universally Unique Lexicographically Sortable Identifier) embedded in its metadata, used for SQLite indexing and cross-references
 
 ### Archiving
 - Marking a task `done` or `canceled` does **not** auto-archive by default; it remains in its current list/project until explicitly archived
 - Users archive tasks via an explicit archive action in the UI/CLI
 - Future configuration may allow enabling auto-archive behavior for users who prefer it
-- Archive files are organized by month: `archive/2026-03.md`, `archive/2026-04.md`, etc.
+- Archived tasks include `archived_at` metadata (timestamp of explicit archive action) and are not grouped by month in runtime storage.
 - Each archived task includes a `source` field in its metadata indicating where it came from (e.g. `source: single-actions`, `source: projects/launch-website`)
 - Archived tasks are still searchable and visible in views via the query DSL
 - The Weekly Review flow surfaces recently completed/canceled items from the archive for acknowledgment

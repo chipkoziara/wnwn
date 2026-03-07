@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -15,6 +16,7 @@ import (
 )
 
 const sqliteTimeLayout = time.RFC3339Nano
+const sqliteArchiveFilename = "archive.md"
 
 type sqliteStore struct {
 	root   string
@@ -43,6 +45,16 @@ func (s *sqliteStore) Init() error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("initializing sqlite schema: %w", err)
 		}
+	}
+
+	if err := s.migrateTaskArchivedAt(db, "list_tasks"); err != nil {
+		return err
+	}
+	if err := s.migrateTaskArchivedAt(db, "project_tasks"); err != nil {
+		return err
+	}
+	if err := s.migrateTaskArchivedAt(db, "archive_tasks"); err != nil {
+		return err
 	}
 
 	if _, err := db.Exec(`
@@ -80,7 +92,7 @@ func (s *sqliteStore) ReadList(lt model.ListType) (*model.TaskList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, notes
+		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM list_tasks
 		WHERE list_type = ?
 		ORDER BY position ASC
@@ -126,8 +138,8 @@ func (s *sqliteStore) WriteList(list *model.TaskList) error {
 		if err := insertTaskTx(tx, `
 			INSERT INTO list_tasks(
 				list_type, position, id, created, text, state, scheduled, deadline,
-				url, tags_json, waiting_on, waiting_since, source, notes
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, string(list.Type), i, task); err != nil {
 			return fmt.Errorf("inserting list task %s: %w", task.ID, err)
 		}
@@ -225,7 +237,7 @@ func (s *sqliteStore) ReadProject(filename string) (*model.Project, error) {
 	}
 
 	taskRows, err := db.Query(`
-		SELECT subgroup_idx, id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, notes
+		SELECT subgroup_idx, id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM project_tasks
 		WHERE project_filename = ?
 		ORDER BY subgroup_idx ASC, position ASC
@@ -331,20 +343,13 @@ func (s *sqliteStore) ReadArchive(filename string) (*model.TaskList, error) {
 	}
 	defer db.Close()
 
-	list := &model.TaskList{Type: model.ListArchive}
-	if err := db.QueryRow(`SELECT title FROM archive_lists WHERE filename = ?`, filename).Scan(&list.Title); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("archive %s: %w", filename, os.ErrNotExist)
-		}
-		return nil, fmt.Errorf("reading archive metadata: %w", err)
-	}
+	list := &model.TaskList{Type: model.ListArchive, Title: "Archive"}
 
 	rows, err := db.Query(`
-		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, notes
+		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM archive_tasks
-		WHERE archive_filename = ?
-		ORDER BY position ASC
-	`, filename)
+		ORDER BY COALESCE(archived_at, created) DESC, position ASC
+	`)
 	if err != nil {
 		return nil, fmt.Errorf("reading archive tasks: %w", err)
 	}
@@ -374,11 +379,11 @@ func (s *sqliteStore) WriteArchive(filename string, list *model.TaskList) error 
 	if _, err := tx.Exec(`
 		INSERT INTO archive_lists(filename, title, type) VALUES(?, ?, ?)
 		ON CONFLICT(filename) DO UPDATE SET title = excluded.title, type = excluded.type
-	`, filename, list.Title, string(list.Type)); err != nil {
+	`, sqliteArchiveFilename, "Archive", string(model.ListArchive)); err != nil {
 		return fmt.Errorf("upserting archive metadata: %w", err)
 	}
 
-	if _, err := tx.Exec(`DELETE FROM archive_tasks WHERE archive_filename = ?`, filename); err != nil {
+	if _, err := tx.Exec(`DELETE FROM archive_tasks`); err != nil {
 		return fmt.Errorf("clearing existing archive tasks: %w", err)
 	}
 
@@ -386,9 +391,9 @@ func (s *sqliteStore) WriteArchive(filename string, list *model.TaskList) error 
 		if err := insertTaskTx(tx, `
 			INSERT INTO archive_tasks(
 				archive_filename, position, id, created, text, state, scheduled, deadline,
-				url, tags_json, waiting_on, waiting_since, source, notes
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, filename, i, task); err != nil {
+				url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, sqliteArchiveFilename, i, task); err != nil {
 			return fmt.Errorf("inserting archive task %s: %w", task.ID, err)
 		}
 	}
@@ -406,24 +411,14 @@ func (s *sqliteStore) ListArchives() ([]string, error) {
 	}
 	defer db.Close()
 
-	rows, err := db.Query(`SELECT filename FROM archive_lists ORDER BY filename ASC`)
-	if err != nil {
-		return nil, fmt.Errorf("listing archives: %w", err)
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM archive_tasks`).Scan(&count); err != nil {
+		return nil, fmt.Errorf("counting archives: %w", err)
 	}
-	defer rows.Close()
-
-	var out []string
-	for rows.Next() {
-		var filename string
-		if err := rows.Scan(&filename); err != nil {
-			return nil, err
-		}
-		out = append(out, filename)
+	if count == 0 {
+		return nil, nil
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
+	return []string{sqliteArchiveFilename}, nil
 }
 
 func (s *sqliteStore) writeProjectWithFilename(filename string, proj *model.Project) error {
@@ -510,8 +505,8 @@ func (s *sqliteStore) writeProjectTx(tx *sql.Tx, filename string, proj *model.Pr
 			if err := insertTaskTx(tx, `
 				INSERT INTO project_tasks(
 					project_filename, subgroup_idx, position, id, created, text, state,
-					scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, notes
-				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+					scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`, filename, sgIdx, pos, task); err != nil {
 				return fmt.Errorf("inserting task %s in subgroup %d: %w", task.ID, sgIdx, err)
 			}
@@ -552,6 +547,7 @@ var sqliteSchema = []string{
 		waiting_on TEXT,
 		waiting_since TEXT,
 		source TEXT,
+		archived_at TEXT,
 		notes TEXT,
 		FOREIGN KEY(list_type) REFERENCES lists(type) ON DELETE CASCADE
 	)`,
@@ -592,6 +588,7 @@ var sqliteSchema = []string{
 		waiting_on TEXT,
 		waiting_since TEXT,
 		source TEXT,
+		archived_at TEXT,
 		notes TEXT,
 		FOREIGN KEY(project_filename, subgroup_idx) REFERENCES subgroups(project_filename, idx) ON DELETE CASCADE
 	)`,
@@ -615,6 +612,7 @@ var sqliteSchema = []string{
 		waiting_on TEXT,
 		waiting_since TEXT,
 		source TEXT,
+		archived_at TEXT,
 		notes TEXT,
 		FOREIGN KEY(archive_filename) REFERENCES archive_lists(filename) ON DELETE CASCADE
 	)`,
@@ -649,6 +647,7 @@ func insertTaskTx(tx *sql.Tx, stmt string, prefix ...any) error {
 		task.WaitingOn,
 		nullTime(task.WaitingSince),
 		task.Source,
+		nullTime(task.ArchivedAt),
 		task.Notes,
 	)
 
@@ -683,6 +682,7 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 	var deadline sql.NullString
 	var tagsJSON sql.NullString
 	var waitingSince sql.NullString
+	var archivedAt sql.NullString
 
 	dests := append(prefixDest,
 		&task.ID,
@@ -696,6 +696,7 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 		&task.WaitingOn,
 		&waitingSince,
 		&task.Source,
+		&archivedAt,
 		&task.Notes,
 	)
 	if err := scanner.Scan(dests...); err != nil {
@@ -732,6 +733,13 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 		}
 		task.WaitingSince = &t
 	}
+	if archivedAt.Valid {
+		t, err := parseSQLiteTime(archivedAt.String)
+		if err != nil {
+			return model.Task{}, fmt.Errorf("parsing task archived_at time: %w", err)
+		}
+		task.ArchivedAt = &t
+	}
 	if tagsJSON.Valid {
 		tags, err := decodeTags(tagsJSON.String)
 		if err != nil {
@@ -741,6 +749,20 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 	}
 
 	return task, nil
+}
+
+func (s *sqliteStore) migrateTaskArchivedAt(db *sql.DB, table string) error {
+	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN archived_at TEXT", table))
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+		return nil
+	}
+	return fmt.Errorf("migrating %s archived_at column: %w", table, err)
 }
 
 func encodeTags(tags []string) (sql.NullString, error) {

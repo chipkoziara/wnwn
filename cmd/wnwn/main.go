@@ -507,13 +507,17 @@ func copyAllData(src *store.Store, dst *store.Store) error {
 	if err != nil {
 		return fmt.Errorf("listing archives: %w", err)
 	}
+	archiveAgg := &model.TaskList{Title: "Archive", Type: model.ListArchive}
 	for _, filename := range archives {
 		archive, err := src.ReadArchive(filename)
 		if err != nil {
 			return fmt.Errorf("reading archive %s: %w", filename, err)
 		}
-		if err := dst.WriteArchive(filename, archive); err != nil {
-			return fmt.Errorf("writing archive %s: %w", filename, err)
+		archiveAgg.Tasks = append(archiveAgg.Tasks, archive.Tasks...)
+	}
+	if len(archiveAgg.Tasks) > 0 {
+		if err := dst.WriteArchive("archive.md", archiveAgg); err != nil {
+			return fmt.Errorf("writing archive: %w", err)
 		}
 	}
 

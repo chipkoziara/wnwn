@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-07 (session 6)
+Last updated: 2026-03-07 (session 7)
 
 ## What This Is
 
@@ -10,7 +10,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ### Data Layer (fully working, 86 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
-- **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
+- **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
 - **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
@@ -21,13 +21,13 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 - **Service** (`internal/service/`): GTD business logic:
   - Inbox: add tasks with functional options (WithDeadline, WithTags, etc.)
   - State transitions: auto-sets waiting_since. done/canceled now stay in place by default.
-  - Explicit archiving: `ArchiveTask` (list tasks) and `ArchiveProjectTask` (project tasks) move items to monthly archives on demand.
+  - Explicit archiving: `ArchiveTask` (list tasks) and `ArchiveProjectTask` (project tasks) move items into archive storage on demand.
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
-	- Archiving: monthly archive files with source tracking
+	- Archiving: archived task records include source tracking and `archived_at` timestamp
 	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields and auto-set waiting_since when entering waiting-for
 	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
-	  - **Archive aggregation**: `CollectArchiveTasks()` reads monthly archive files and returns archive `[]ViewTask` entries for the dedicated Archives view
+	  - **Archive aggregation**: `CollectArchiveTasks()` reads archived tasks and returns archive `[]ViewTask` entries for the dedicated Archives view
 
 ### CLI (`cmd/wnwn/main.go`)
 - `wnwn` (no args): launches TUI
@@ -158,8 +158,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
   single-actions.md        # standalone next actions
   projects/                # one .md file per project
     launch-website.md
-  archive/                 # monthly archives
-    2026-03.md
+  archive/                 # markdown export/import archive data
+    archive.md             # unified archive export file
 ```
 
 Tasks use Markdown checkboxes with indented fenced YAML metadata blocks. See `BRD.md` section 4 for full spec with examples.

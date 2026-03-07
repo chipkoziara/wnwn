@@ -2,7 +2,6 @@ package service
 
 import (
 	"testing"
-	"time"
 
 	"github.com/wnwn/wnwn/internal/model"
 )
@@ -248,7 +247,7 @@ func TestArchiveProjectTask(t *testing.T) {
 		t.Fatalf("project has %d tasks, want 0", len(proj.SubGroups[0].Tasks))
 	}
 
-	archiveFile := time.Now().Format("2006-01") + ".md"
+	archiveFile := "archive.md"
 	archive, err := s.ReadArchive(archiveFile)
 	if err != nil {
 		t.Fatal(err)
@@ -258,6 +257,9 @@ func TestArchiveProjectTask(t *testing.T) {
 	}
 	if archive.Tasks[0].Source != "projects/my-project.md" {
 		t.Errorf("archived source = %q", archive.Tasks[0].Source)
+	}
+	if archive.Tasks[0].ArchivedAt == nil {
+		t.Error("ArchivedAt is nil, expected archive timestamp")
 	}
 }
 
