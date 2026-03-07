@@ -41,7 +41,7 @@ func main() {
 
 func cmdTUI() {
 	dataDir := getDataDir()
-	m := tui.New(dataDir, store.BackendFromEnv())
+	m := tui.New(dataDir)
 	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -59,7 +59,7 @@ func printUsage() {
 	fmt.Println("commands:")
 	fmt.Println("  add    Add a task to the inbox")
 	fmt.Println("  export-md   Export current data to Markdown")
-	fmt.Println("  import-md   Import Markdown data into current backend")
+	fmt.Println("  import-md   Import Markdown data into SQLite store")
 	fmt.Println("  help   Show this help message")
 	fmt.Println()
 	fmt.Println("examples:")
@@ -149,8 +149,7 @@ func cmdAdd(args []string) {
 
 	// Initialize store and service.
 	dataDir := getDataDir()
-	backend := store.BackendFromEnv()
-	s := store.NewWithBackend(dataDir, backend)
+	s := store.New(dataDir)
 	if err := s.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing data directory: %v\n", err)
 		os.Exit(1)
@@ -189,14 +188,13 @@ func cmdExportMarkdown(args []string) {
 	}
 
 	dataDir := getDataDir()
-	backend := store.BackendFromEnv()
-	src := store.NewWithBackend(dataDir, backend)
+	src := store.New(dataDir)
 	if err := src.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing source backend: %v\n", err)
 		os.Exit(1)
 	}
 
-	dst := store.NewWithBackend(outDir, store.BackendMarkdown)
+	dst := store.NewMarkdown(outDir)
 	if err := dst.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing markdown destination: %v\n", err)
 		os.Exit(1)
@@ -223,14 +221,13 @@ func cmdImportMarkdown(args []string) {
 	}
 
 	dataDir := getDataDir()
-	backend := store.BackendFromEnv()
-	src := store.NewWithBackend(fromDir, store.BackendMarkdown)
+	src := store.NewMarkdown(fromDir)
 	if err := src.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing markdown source: %v\n", err)
 		os.Exit(1)
 	}
 
-	dst := store.NewWithBackend(dataDir, backend)
+	dst := store.New(dataDir)
 	if err := dst.Init(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: initializing destination backend: %v\n", err)
 		os.Exit(1)

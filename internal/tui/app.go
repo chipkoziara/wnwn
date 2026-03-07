@@ -180,8 +180,8 @@ type Model struct {
 }
 
 // New creates a new TUI model backed by the given data directory.
-func New(dataDir string, backend store.BackendType) Model {
-	s := store.NewWithBackend(dataDir, backend)
+func New(dataDir string) Model {
+	s := store.New(dataDir)
 	svc := service.New(s)
 
 	ti := textinput.New()

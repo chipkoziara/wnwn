@@ -10,16 +10,14 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ### Data Layer (fully working, 82 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
-- **Pluggable persistence backend** (`internal/store/`): `Store` now delegates to backend drivers with a shared API. Available backends:
-  - `markdown` (legacy file backend; still supported)
-  - `sqlite` (new relational backend, default at runtime via `WNWN_BACKEND`)
-  - SQLite schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
-  - Added `ListArchives()` to the store API to support full backend-to-backend migration/export flows.
+- **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, archive lists, and archive tasks, with ordered-position columns for deterministic rendering.
+- **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
+- **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
 - **ULID generation** (`internal/id/`): Task IDs using oklog/ulid.
-- **Store** (`internal/store/`): File system abstraction. Read/write for lists, projects, archives. Auto-init of data directory structure. Slugified project filenames.
+- **Store** (`internal/store/`): Persistence abstraction over the SQLite runtime backend plus Markdown interchange adapter. Supports read/write for lists, projects, and archives, with slugified project filenames.
 - **Service** (`internal/service/`): GTD business logic:
   - Inbox: add tasks with functional options (WithDeadline, WithTags, etc.)
   - State transitions: auto-sets waiting_since, auto-archives done/canceled
@@ -32,11 +30,10 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 ### CLI (`cmd/wnwn/main.go`)
 - `wnwn` (no args): launches TUI
 - `wnwn add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
-- `wnwn export-md --out DIR`: exports current backend data to Markdown files
-- `wnwn import-md --from DIR`: imports Markdown files into the current backend
+- `wnwn export-md --out DIR`: exports SQLite data to Markdown files
+- `wnwn import-md --from DIR`: imports Markdown files into SQLite
 - `wnwn help`: usage info
 - Data dir configurable via `WNWN_DATA_DIR` env var (default: `~/.local/share/wnwn`)
-- Backend configurable via `WNWN_BACKEND` env var (`sqlite` default, `markdown` supported)
 
 ### TUI (`internal/tui/`)
 Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with these features:

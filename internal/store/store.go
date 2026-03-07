@@ -1,51 +1,11 @@
-// Package store provides backend-agnostic persistence for wnwn.
+// Package store provides persistence for wnwn.
 package store
 
 import (
-	"errors"
-	"os"
 	"strings"
 
 	"github.com/wnwn/wnwn/internal/model"
 )
-
-// BackendType identifies the persistence implementation.
-type BackendType string
-
-const (
-	BackendMarkdown BackendType = "markdown"
-	BackendSQLite   BackendType = "sqlite"
-)
-
-// ErrUnknownBackend is returned when a backend name is not supported.
-var ErrUnknownBackend = errors.New("unknown backend")
-
-// BackendFromString parses a backend name.
-func BackendFromString(s string) (BackendType, error) {
-	s = strings.TrimSpace(strings.ToLower(s))
-	switch BackendType(s) {
-	case BackendMarkdown:
-		return BackendMarkdown, nil
-	case BackendSQLite:
-		return BackendSQLite, nil
-	default:
-		return "", ErrUnknownBackend
-	}
-}
-
-// BackendFromEnv returns the selected backend from WNWN_BACKEND.
-// Defaults to sqlite when unset.
-func BackendFromEnv() BackendType {
-	raw := strings.TrimSpace(strings.ToLower(os.Getenv("WNWN_BACKEND")))
-	if raw == "" {
-		return BackendSQLite
-	}
-	b, err := BackendFromString(raw)
-	if err != nil {
-		return BackendSQLite
-	}
-	return b
-}
 
 type driver interface {
 	Init() error
@@ -62,30 +22,24 @@ type driver interface {
 
 // Store manages access to persisted GTD data.
 type Store struct {
-	Root    string
-	Backend BackendType
-	driver  driver
+	Root   string
+	driver driver
 }
 
 // New creates a Store rooted at the given directory.
-// Uses Markdown backend for backwards compatibility in tests and tools.
+// SQLite is the canonical runtime backend.
 func New(root string) *Store {
-	return NewWithBackend(root, BackendMarkdown)
+	return &Store{
+		Root:   root,
+		driver: newSQLiteStore(root),
+	}
 }
 
-// NewWithBackend creates a Store with an explicit backend.
-func NewWithBackend(root string, backend BackendType) *Store {
-	s := &Store{Root: root, Backend: backend}
-	s.driver = newDriver(root, backend)
-	return s
-}
-
-func newDriver(root string, backend BackendType) driver {
-	switch backend {
-	case BackendSQLite:
-		return newSQLiteStore(root)
-	default:
-		return newMarkdownStore(root)
+// NewMarkdown creates a Markdown-backed store used for import/export workflows.
+func NewMarkdown(root string) *Store {
+	return &Store{
+		Root:   root,
+		driver: newMarkdownStore(root),
 	}
 }
 

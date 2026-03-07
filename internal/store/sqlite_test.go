@@ -8,7 +8,7 @@ import (
 )
 
 func TestSQLiteInitAndDefaultLists(t *testing.T) {
-	s := NewWithBackend(t.TempDir(), BackendSQLite)
+	s := New(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func TestSQLiteInitAndDefaultLists(t *testing.T) {
 }
 
 func TestSQLiteProjectRoundTrip(t *testing.T) {
-	s := NewWithBackend(t.TempDir(), BackendSQLite)
+	s := New(t.TempDir())
 	if err := s.Init(); err != nil {
 		t.Fatal(err)
 	}
