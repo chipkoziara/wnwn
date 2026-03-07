@@ -30,6 +30,18 @@ Once a feature is complete and `go test ./...` passes:
 2. **Update `BRD.md` if needed** — only if the implementation meaningfully diverges from or extends the spec. BRD is a stable spec document; don't update it just to match implementation details.
 3. **Commit with a detailed message** — include what was built, key design decisions, and any non-obvious implementation notes (e.g. why a third-party library wasn't used, patterns introduced). Multi-paragraph commit messages are appropriate for significant features.
 
+## Commit Policy
+
+Default behavior for this repo:
+
+- After implementing requested code changes and running `go test ./...` successfully, create a git commit automatically.
+- Do not wait for an extra "please commit" prompt unless the user explicitly says not to commit.
+- Do not commit build artifacts or local binaries (e.g. `wnwn`).
+- If there are no code/doc changes to commit, report that and do not create an empty commit.
+- Use detailed commit messages:
+  - Subject line: concise, imperative (`feat: ...`, `fix: ...`, `refactor: ...`, `docs: ...`)
+  - Body: 1-3 short paragraphs explaining what changed, why, and non-obvious design decisions.
+
 ## Code Patterns
 
 - **Service layer is stateless** — every mutation is read → modify → write. No in-memory cache in the service.
