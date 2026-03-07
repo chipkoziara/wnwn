@@ -62,9 +62,11 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 **Inbox view:**
 - `a`: add task inline
 - `P`: launch Process Inbox mode (guided GTD decision tree)
-- `r`: refile to single-actions as next-action
 - `p`: refile to a project (opens project picker)
-- `s`: set someday/maybe (refiles from inbox)
+- `s`: state prefix (`m` someday, `d` done, `c` canceled, `w` waiting)
+- `r`: route prefix (`a` single-actions, `p` project)
+- `t`: time prefix (`d` deadline, `s` scheduled)
+- `m`: quick someday/maybe (refiles from inbox)
 - `w`: set waiting-for (refiles from inbox)
 - `d`: mark done (stays in list)
 - `c`: mark canceled (stays in list)
@@ -86,7 +88,9 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Single Actions view:**
 - `p`: refile to a project
-- `s`/`w`/`d`/`c`: state changes (same as inbox but updates in-place)
+- `s` prefix + (`m`/`d`/`c`/`w`): grouped state actions
+- direct quick states: `m`/`w`/`d`/`c`
+- `t` prefix + (`d`/`s`): deadline/scheduled quick edit
 - `A`: archive selected task
 - `x`: trash (permanent delete)
 
@@ -100,6 +104,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `enter`: open task detail view for selected task
 - `a`: add task to current sub-group
 - `n`: add new sub-group
+- `s` prefix + (`m`/`d`/`c`/`w`): grouped state actions
+- `t` prefix + (`d`/`s`): deadline/scheduled quick edit
 - `d`: mark task done
 - `c`: mark task canceled
 - `A`: archive selected task
@@ -133,6 +139,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `j`/`k`/`g`/`G`: navigate results
 - `enter`: open task detail (full edit; esc/save returns to view results and refreshes)
 - `d`/`c`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
+- `s` prefix + (`m`/`d`/`c`/`w`) for grouped state actions; direct quick states remain available (`m`/`d`/`c`/`w`)
+- `t` prefix + (`d`/`s`) for quick deadline/scheduled edit
 - `A`: archive selected task (source-aware); view refreshes automatically
 - `x`: trash (permanent delete for both list and project tasks); view refreshes
 - `R`: manual refresh (re-collect and re-filter)

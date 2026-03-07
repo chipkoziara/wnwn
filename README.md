@@ -16,6 +16,7 @@ Runtime data is stored in SQLite, with first-class Markdown import/export for po
 - **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
 - **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
 - **Weekly Review mode** — guided multi-section sweep for stale projects, aging waiting-for, someday/maybe, and recent archives
+- **Hybrid keybindings** — supports quick single-key actions plus two-step prefixes for grouped actions (`s` state, `r` route, `t` time)
 
 ### Task Lifecycle Semantics
 
@@ -98,6 +99,7 @@ default_view = "inbox" # inbox | actions | projects | views
 [keys.list]
 done = "d"
 cancel = "c"
+someday = "m"
 archive = "A"
 trash = "x"
 process = "P"
@@ -111,6 +113,7 @@ trash = "x"
 [keys.view_results]
 done = "d"
 cancel = "c"
+someday = "m"
 archive = "A"
 trash = "x"
 refresh = "R"
@@ -139,9 +142,11 @@ Keybinding action names supported:
 | `a` | Add task inline |
 | `P` | Process inbox (guided GTD decision tree) |
 | `enter` | Open task detail / edit view |
-| `r` | Refile as next action (→ Single Actions) |
+| `r` then `a` | Route to Single Actions as next action |
 | `p` | Refile to a project |
-| `s` | Set someday/maybe |
+| `s` then `m` | Set someday/maybe |
+| `s` then `d/c/w` | Set done / canceled / waiting-for |
+| `t` then `d/s` | Edit deadline / scheduled via date picker |
 | `w` | Set waiting-for |
 | `d` | Mark done (stays in list) |
 | `c` | Mark canceled (stays in list) |
@@ -154,7 +159,9 @@ Keybinding action names supported:
 |-----|--------|
 | `enter` | Open task detail / edit view |
 | `p` | Refile to a project |
-| `s` / `w` / `d` / `c` | State changes (same as Inbox) |
+| `s` then `m/d/c/w` | State prefix actions |
+| `m` / `w` / `d` / `c` | Quick state changes |
+| `t` then `d/s` | Edit deadline / scheduled via date picker |
 | `x` | Trash (permanent delete) |
 | `A` | Archive selected task |
 
@@ -175,6 +182,8 @@ Keybinding action names supported:
 | `n` | Add new sub-group |
 | `d` | Mark task done |
 | `c` | Mark task canceled |
+| `s` then `m/d/c/w` | State prefix actions |
+| `t` then `d/s` | Edit deadline / scheduled via date picker |
 | `A` | Archive selected task |
 | `x` | Trash selected task (permanent delete) |
 | `E` | Edit project metadata |
@@ -196,7 +205,8 @@ In Weekly Review mode:
 - `h`/`l` (or arrows) move between sections
 - `j`/`k` navigate items in a section
 - `enter` opens selected item (project detail or task detail)
-- `d`/`c`/`s`/`w`, `A`, `x` mutate active (non-archived) tasks directly
+- `s` then `m/d/c/w` uses state prefix; `t` then `d/s` edits deadline/scheduled quickly
+- `d`/`c`/`m`/`w`, `A`, `x` still work as direct shortcuts on active (non-archived) tasks
 - archived section is read-only
 
 ## Markdown Export Format

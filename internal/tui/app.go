@@ -57,6 +57,15 @@ const (
 	weeklyStepCount
 )
 
+type keyPrefix int
+
+const (
+	prefixNone keyPrefix = iota
+	prefixState
+	prefixRoute
+	prefixTime
+)
+
 // projEditField enumerates the editable fields in the project edit view.
 type projEditField int
 
@@ -193,6 +202,7 @@ type Model struct {
 	weeklyReviewData    service.WeeklyReviewData
 	weeklyReviewStep    weeklyReviewStep
 	weeklyReviewCursors [weeklyStepCount]int
+	pendingPrefix       keyPrefix
 
 	keybindings map[string]map[string]string
 }
@@ -261,7 +271,7 @@ var defaultKeybindings = map[string]map[string]string{
 		"add":            "a",
 		"refile_actions": "r",
 		"refile_project": "p",
-		"someday":        "s",
+		"someday":        "m",
 		"waiting":        "w",
 		"done":           "d",
 		"cancel":         "c",
@@ -281,7 +291,7 @@ var defaultKeybindings = map[string]map[string]string{
 	"view_results": {
 		"done":    "d",
 		"cancel":  "c",
-		"someday": "s",
+		"someday": "m",
 		"waiting": "w",
 		"archive": "A",
 		"trash":   "x",
@@ -384,6 +394,8 @@ type weeklyReviewLoadedMsg struct {
 	data service.WeeklyReviewData
 	err  error
 }
+
+type clearPrefixMsg struct{}
 
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -542,6 +554,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = ""
 		return m, nil
 
+	case clearPrefixMsg:
+		m.pendingPrefix = prefixNone
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		return m, nil
@@ -663,9 +679,111 @@ func (m Model) clearStatusAfter() tea.Cmd {
 	})
 }
 
+func (m Model) clearPrefixAfter() tea.Cmd {
+	return tea.Tick(time.Second*3, func(time.Time) tea.Msg {
+		return clearPrefixMsg{}
+	})
+}
+
+func (m *Model) beginPrefix(p keyPrefix) tea.Cmd {
+	m.pendingPrefix = p
+	switch p {
+	case prefixState:
+		m.statusMsg = "State: d done, c canceled, w waiting-for, m someday"
+	case prefixRoute:
+		m.statusMsg = "Route: a single-actions, p project"
+	case prefixTime:
+		m.statusMsg = "Time: d deadline, s scheduled"
+	}
+	return tea.Batch(m.clearStatusAfter(), m.clearPrefixAfter())
+}
+
+func (m *Model) cancelPrefix() {
+	m.pendingPrefix = prefixNone
+}
+
 // updateNormal handles keys in normal (browsing) mode.
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := m.remapKey("list", msg.String())
+	raw := msg.String()
+	if m.pendingPrefix != prefixNone {
+		switch m.pendingPrefix {
+		case prefixState:
+			m.cancelPrefix()
+			if raw == "esc" || m.list == nil || len(m.list.Tasks) == 0 {
+				return m, nil
+			}
+			task := m.list.Tasks[m.cursor]
+			switch raw {
+			case "d":
+				_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
+				return m, m.loadCurrentList
+			case "c":
+				_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled)
+				return m, m.loadCurrentList
+			case "w":
+				return m, m.setStateWaiting(task.ID, task.Text)
+			case "m":
+				return m, m.setStateSomeday(task.ID, task.Text)
+			default:
+				return m, nil
+			}
+		case prefixRoute:
+			m.cancelPrefix()
+			if raw == "esc" || m.list == nil || len(m.list.Tasks) == 0 {
+				return m, nil
+			}
+			task := m.list.Tasks[m.cursor]
+			if raw == "a" {
+				if m.currentList != model.ListIn {
+					m.statusMsg = "Route to single-actions only from inbox"
+					return m, m.clearStatusAfter()
+				}
+				return m, m.refileTask(task.ID, task.Text, model.ListSingleActions, model.StateNextAction)
+			}
+			if raw == "p" {
+				m.refileTaskID = task.ID
+				m.refileTaskText = task.Text
+				m.refileFromList = m.currentList
+				m.mode = modePickingProject
+				m.cursor = 0
+				return m, m.loadProjects
+			}
+			return m, nil
+		case prefixTime:
+			m.cancelPrefix()
+			if raw == "esc" || m.list == nil || len(m.list.Tasks) == 0 {
+				return m, nil
+			}
+			if raw != "d" && raw != "s" {
+				return m, nil
+			}
+			task := m.list.Tasks[m.cursor]
+			m.detailTask = task
+			m.detailFromView = viewList
+			m.detailFromList = m.currentList
+			m.detailFromSgIdx = -1
+			m.detailIsProject = false
+			if raw == "d" {
+				m.detailField = fieldDeadline
+				m.datePickerField = fieldDeadline
+			} else {
+				m.detailField = fieldScheduled
+				m.datePickerField = fieldScheduled
+			}
+			m.view = viewTaskDetail
+			m.mode = modePickingDate
+			var initial time.Time
+			if m.datePickerField == fieldDeadline && m.detailTask.Deadline != nil {
+				initial = *m.detailTask.Deadline
+			}
+			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
+				initial = *m.detailTask.Scheduled
+			}
+			return m, m.datePicker.Open(initial)
+		}
+	}
+
+	key := m.remapKey("list", raw)
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -734,7 +852,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 
 	// Open task detail view.
-	case "enter":
+	case "enter", "e":
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
 			m.detailTask = task
@@ -757,21 +875,25 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.input.Focus()
 		return m, cmd
 
-	// Refile to single-actions as next-action (inbox only).
+	// Begin route prefix.
 	case "r":
-		if m.currentList != model.ListIn || m.list == nil || len(m.list.Tasks) == 0 {
-			return m, nil
-		}
-		task := m.list.Tasks[m.cursor]
-		return m, m.refileTask(task.ID, task.Text, model.ListSingleActions, model.StateNextAction)
+		return m, m.beginPrefix(prefixRoute)
 
-	// Move to someday/maybe (inbox or single-actions).
+	// Begin state prefix.
 	case "s":
+		return m, m.beginPrefix(prefixState)
+
+	// Direct someday alias.
+	case "m":
 		if m.list == nil || len(m.list.Tasks) == 0 {
 			return m, nil
 		}
 		task := m.list.Tasks[m.cursor]
 		return m, m.setStateSomeday(task.ID, task.Text)
+
+	// Begin time prefix.
+	case "t":
+		return m, m.beginPrefix(prefixTime)
 
 	// Refile to a project (from inbox or single-actions).
 	case "p":
@@ -1298,8 +1420,71 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // updateProjectDetail handles keys when viewing a single project.
 func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := m.remapKey("project", msg.String())
 	flatItems := m.flattenProject()
+	raw := msg.String()
+	if m.pendingPrefix != prefixNone {
+		switch m.pendingPrefix {
+		case prefixState:
+			m.cancelPrefix()
+			if raw == "esc" || len(flatItems) == 0 {
+				return m, nil
+			}
+			item := flatItems[m.projCursor]
+			if !item.isTask {
+				return m, nil
+			}
+			switch raw {
+			case "d":
+				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone)
+				return m, m.reloadProjectDetail()
+			case "c":
+				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled)
+				return m, m.reloadProjectDetail()
+			case "w":
+				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateWaitingFor)
+				return m, m.reloadProjectDetail()
+			case "m":
+				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateSomeday)
+				return m, m.reloadProjectDetail()
+			default:
+				return m, nil
+			}
+		case prefixTime:
+			m.cancelPrefix()
+			if raw == "esc" || (raw != "d" && raw != "s") || len(flatItems) == 0 {
+				return m, nil
+			}
+			item := flatItems[m.projCursor]
+			if !item.isTask {
+				return m, nil
+			}
+			m.detailTask = item.task
+			m.detailFromView = viewProjectDetail
+			m.detailFromSgIdx = item.sgIdx
+			m.detailIsProject = true
+			if raw == "d" {
+				m.detailField = fieldDeadline
+				m.datePickerField = fieldDeadline
+			} else {
+				m.detailField = fieldScheduled
+				m.datePickerField = fieldScheduled
+			}
+			m.view = viewTaskDetail
+			m.mode = modePickingDate
+			var initial time.Time
+			if m.datePickerField == fieldDeadline && m.detailTask.Deadline != nil {
+				initial = *m.detailTask.Deadline
+			}
+			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
+				initial = *m.detailTask.Scheduled
+			}
+			return m, m.datePicker.Open(initial)
+		default:
+			m.cancelPrefix()
+		}
+	}
+
+	key := m.remapKey("project", raw)
 
 	switch key {
 	case "q", "ctrl+c":
@@ -1329,7 +1514,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.projCursor = len(flatItems) - 1
 		}
 
-	case "enter":
+	case "enter", "e":
 		// Open task detail for the selected task.
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
@@ -1362,6 +1547,12 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Placeholder = "Sub-group name"
 		cmd := m.input.Focus()
 		return m, cmd
+
+	case "s":
+		return m, m.beginPrefix(prefixState)
+
+	case "t":
+		return m, m.beginPrefix(prefixTime)
 
 	case "d":
 		// Mark task done.
@@ -2973,7 +3164,13 @@ func (m Model) helpText() string {
 		return "j/k: navigate  h/l: prev/next section  enter: open item  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
 	}
 	if m.view == viewViewResults {
-		return "enter: task detail  d: done  c: canceled  s: someday  w: waiting  A: archive  x: trash  R: refresh  esc: back  j/k: navigate"
+		if m.pendingPrefix == prefixState {
+			return "state -> d: done  c: canceled  w: waiting-for  m: someday  esc: cancel"
+		}
+		if m.pendingPrefix == prefixTime {
+			return "time -> d: deadline  s: scheduled  esc: cancel"
+		}
+		return "enter/e: detail  s: state-prefix  m: someday  t: time-prefix  d/c/w: quick states  A: archive  x: trash  R: refresh  esc: back"
 	}
 
 	nav := "j/k: navigate  tab: switch list  q: quit"
@@ -2982,12 +3179,27 @@ func (m Model) helpText() string {
 	case viewProjects:
 		return "enter: open  a: new project  E: edit project  " + nav
 	case viewProjectDetail:
-		return "enter: detail  a: add task  n: new sub-group  d: done  c: canceled  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move to sub-group  esc: back  " + nav
-	default:
-		if m.currentList == model.ListIn {
-			return "enter: detail  a: add  P: process inbox  r: refile  p: to project  s: someday  w: waiting  d: done  c: canceled  A: archive  x: trash  " + nav
+		if m.pendingPrefix == prefixState {
+			return "state -> d: done  c: canceled  w: waiting-for  m: someday  esc: cancel"
 		}
-		return "enter: detail  p: to project  s: someday  w: waiting  d: done  c: canceled  A: archive  x: trash  " + nav
+		if m.pendingPrefix == prefixTime {
+			return "time -> d: deadline  s: scheduled  esc: cancel"
+		}
+		return "enter/e: detail  a: add task  n: new sub-group  s: state-prefix  t: time-prefix  d/c/w: quick states  A: archive  x: trash  E: edit project  C-j/C-k: reorder  m: move  esc: back"
+	default:
+		if m.pendingPrefix == prefixState {
+			return "state -> d: done  c: canceled  w: waiting-for  m: someday  esc: cancel"
+		}
+		if m.pendingPrefix == prefixRoute {
+			return "route -> a: single-actions  p: project  esc: cancel"
+		}
+		if m.pendingPrefix == prefixTime {
+			return "time -> d: deadline  s: scheduled  esc: cancel"
+		}
+		if m.currentList == model.ListIn {
+			return "enter/e: detail  a: add  P: process  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
+		}
+		return "enter/e: detail  s: state-prefix  r: route-prefix  t: time-prefix  p: to project  m: someday  d/c/w: quick states  A: archive  x: trash  " + nav
 	}
 }
 
@@ -3638,7 +3850,72 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // updateViewResults handles keys in the view results screen.
 func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := m.remapKey("view_results", msg.String())
+	raw := msg.String()
+	if m.pendingPrefix != prefixNone {
+		switch m.pendingPrefix {
+		case prefixState:
+			m.cancelPrefix()
+			if m.selectedViewResultIsArchived() {
+				m.statusMsg = "Archived tasks are read-only"
+				return m, m.clearStatusAfter()
+			}
+			switch raw {
+			case "d":
+				return m, m.viewResultStateChange(model.StateDone)
+			case "c":
+				return m, m.viewResultStateChange(model.StateCanceled)
+			case "w":
+				return m, m.viewResultStateChange(model.StateWaitingFor)
+			case "m":
+				return m, m.viewResultStateChange(model.StateSomeday)
+			default:
+				return m, nil
+			}
+		case prefixTime:
+			m.cancelPrefix()
+			if raw != "d" && raw != "s" {
+				return m, nil
+			}
+			if len(m.viewResults) == 0 {
+				return m, nil
+			}
+			vt := m.viewResults[m.viewCursor]
+			if vt.ListType == model.ListArchive {
+				m.statusMsg = "Archived tasks are read-only"
+				return m, m.clearStatusAfter()
+			}
+			m.detailTask = vt.Task
+			m.detailFromView = viewViewResults
+			m.detailIsProject = vt.IsProject
+			if vt.IsProject {
+				m.activeFilename = vt.Filename
+				m.detailFromSgIdx = vt.SgIdx
+			} else {
+				m.detailFromList = vt.ListType
+			}
+			if raw == "d" {
+				m.detailField = fieldDeadline
+				m.datePickerField = fieldDeadline
+			} else {
+				m.detailField = fieldScheduled
+				m.datePickerField = fieldScheduled
+			}
+			m.view = viewTaskDetail
+			m.mode = modePickingDate
+			var initial time.Time
+			if m.datePickerField == fieldDeadline && m.detailTask.Deadline != nil {
+				initial = *m.detailTask.Deadline
+			}
+			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
+				initial = *m.detailTask.Scheduled
+			}
+			return m, m.datePicker.Open(initial)
+		default:
+			m.cancelPrefix()
+		}
+	}
+
+	key := m.remapKey("view_results", raw)
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -3665,7 +3942,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.viewCursor = len(m.viewResults) - 1
 		}
 
-	case "enter":
+	case "enter", "e":
 		if len(m.viewResults) == 0 {
 			return m, nil
 		}
@@ -3706,11 +3983,17 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.viewResultStateChange(model.StateCanceled)
 
 	case "s":
+		return m, m.beginPrefix(prefixState)
+
+	case "m":
 		if m.selectedViewResultIsArchived() {
 			m.statusMsg = "Archived tasks are read-only"
 			return m, m.clearStatusAfter()
 		}
 		return m, m.viewResultStateChange(model.StateSomeday)
+
+	case "t":
+		return m, m.beginPrefix(prefixTime)
 
 	case "w":
 		if m.selectedViewResultIsArchived() {
