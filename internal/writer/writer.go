@@ -115,6 +115,9 @@ func writeTask(w io.Writer, task *model.Task) {
 	if !task.Created.IsZero() {
 		fmt.Fprintf(w, "  created: %s\n", task.Created.Format(timeFormat))
 	}
+	if task.ModifiedAt != nil {
+		fmt.Fprintf(w, "  modified_at: %s\n", task.ModifiedAt.Format(timeFormat))
+	}
 	if task.State != model.StateEmpty {
 		fmt.Fprintf(w, "  state: %s\n", task.State)
 	}
@@ -138,6 +141,9 @@ func writeTask(w io.Writer, task *model.Task) {
 	}
 	if task.Source != "" {
 		fmt.Fprintf(w, "  source: %s\n", task.Source)
+	}
+	if task.ArchivedAt != nil {
+		fmt.Fprintf(w, "  archived_at: %s\n", task.ArchivedAt.Format(timeFormat))
 	}
 	fmt.Fprintf(w, "  ```\n")
 

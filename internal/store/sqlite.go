@@ -50,10 +50,19 @@ func (s *sqliteStore) Init() error {
 	if err := s.migrateTaskArchivedAt(db, "list_tasks"); err != nil {
 		return err
 	}
+	if err := s.migrateTaskModifiedAt(db, "list_tasks"); err != nil {
+		return err
+	}
 	if err := s.migrateTaskArchivedAt(db, "project_tasks"); err != nil {
 		return err
 	}
+	if err := s.migrateTaskModifiedAt(db, "project_tasks"); err != nil {
+		return err
+	}
 	if err := s.migrateTaskArchivedAt(db, "archive_tasks"); err != nil {
+		return err
+	}
+	if err := s.migrateTaskModifiedAt(db, "archive_tasks"); err != nil {
 		return err
 	}
 
@@ -92,7 +101,7 @@ func (s *sqliteStore) ReadList(lt model.ListType) (*model.TaskList, error) {
 	}
 
 	rows, err := db.Query(`
-		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+		SELECT id, created, modified_at, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM list_tasks
 		WHERE list_type = ?
 		ORDER BY position ASC
@@ -137,9 +146,9 @@ func (s *sqliteStore) WriteList(list *model.TaskList) error {
 	for i, task := range list.Tasks {
 		if err := insertTaskTx(tx, `
 			INSERT INTO list_tasks(
-				list_type, position, id, created, text, state, scheduled, deadline,
+				list_type, position, id, created, modified_at, text, state, scheduled, deadline,
 				url, tags_json, waiting_on, waiting_since, source, archived_at, notes
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, string(list.Type), i, task); err != nil {
 			return fmt.Errorf("inserting list task %s: %w", task.ID, err)
 		}
@@ -237,7 +246,7 @@ func (s *sqliteStore) ReadProject(filename string) (*model.Project, error) {
 	}
 
 	taskRows, err := db.Query(`
-		SELECT subgroup_idx, id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+		SELECT subgroup_idx, id, created, modified_at, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM project_tasks
 		WHERE project_filename = ?
 		ORDER BY subgroup_idx ASC, position ASC
@@ -346,7 +355,7 @@ func (s *sqliteStore) ReadArchive(filename string) (*model.TaskList, error) {
 	list := &model.TaskList{Type: model.ListArchive, Title: "Archive"}
 
 	rows, err := db.Query(`
-		SELECT id, created, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
+		SELECT id, created, modified_at, text, state, scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
 		FROM archive_tasks
 		ORDER BY COALESCE(archived_at, created) DESC, position ASC
 	`)
@@ -390,9 +399,9 @@ func (s *sqliteStore) WriteArchive(filename string, list *model.TaskList) error 
 	for i, task := range list.Tasks {
 		if err := insertTaskTx(tx, `
 			INSERT INTO archive_tasks(
-				archive_filename, position, id, created, text, state, scheduled, deadline,
+				archive_filename, position, id, created, modified_at, text, state, scheduled, deadline,
 				url, tags_json, waiting_on, waiting_since, source, archived_at, notes
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, sqliteArchiveFilename, i, task); err != nil {
 			return fmt.Errorf("inserting archive task %s: %w", task.ID, err)
 		}
@@ -504,9 +513,9 @@ func (s *sqliteStore) writeProjectTx(tx *sql.Tx, filename string, proj *model.Pr
 		for pos, task := range sg.Tasks {
 			if err := insertTaskTx(tx, `
 				INSERT INTO project_tasks(
-					project_filename, subgroup_idx, position, id, created, text, state,
+					project_filename, subgroup_idx, position, id, created, modified_at, text, state,
 					scheduled, deadline, url, tags_json, waiting_on, waiting_since, source, archived_at, notes
-				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			`, filename, sgIdx, pos, task); err != nil {
 				return fmt.Errorf("inserting task %s in subgroup %d: %w", task.ID, sgIdx, err)
 			}
@@ -538,6 +547,7 @@ var sqliteSchema = []string{
 		position INTEGER NOT NULL,
 		id TEXT PRIMARY KEY,
 		created TEXT NOT NULL,
+		modified_at TEXT,
 		text TEXT NOT NULL,
 		state TEXT,
 		scheduled TEXT,
@@ -579,6 +589,7 @@ var sqliteSchema = []string{
 		position INTEGER NOT NULL,
 		id TEXT PRIMARY KEY,
 		created TEXT NOT NULL,
+		modified_at TEXT,
 		text TEXT NOT NULL,
 		state TEXT,
 		scheduled TEXT,
@@ -603,6 +614,7 @@ var sqliteSchema = []string{
 		position INTEGER NOT NULL,
 		id TEXT PRIMARY KEY,
 		created TEXT NOT NULL,
+		modified_at TEXT,
 		text TEXT NOT NULL,
 		state TEXT,
 		scheduled TEXT,
@@ -638,6 +650,7 @@ func insertTaskTx(tx *sql.Tx, stmt string, prefix ...any) error {
 	args := append(prefix,
 		task.ID,
 		task.Created.Format(sqliteTimeLayout),
+		nullTime(task.ModifiedAt),
 		task.Text,
 		nullState(task.State),
 		nullTime(task.Scheduled),
@@ -677,6 +690,7 @@ func scanTasks(rows *sql.Rows) ([]model.Task, error) {
 func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 	var task model.Task
 	var created string
+	var modifiedAt sql.NullString
 	var state sql.NullString
 	var scheduled sql.NullString
 	var deadline sql.NullString
@@ -687,6 +701,7 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 	dests := append(prefixDest,
 		&task.ID,
 		&created,
+		&modifiedAt,
 		&task.Text,
 		&state,
 		&scheduled,
@@ -711,6 +726,13 @@ func scanTaskRow(scanner rowScanner, prefixDest ...any) (model.Task, error) {
 
 	if state.Valid {
 		task.State = model.TaskState(state.String)
+	}
+	if modifiedAt.Valid {
+		t, err := parseSQLiteTime(modifiedAt.String)
+		if err != nil {
+			return model.Task{}, fmt.Errorf("parsing task modified_at time: %w", err)
+		}
+		task.ModifiedAt = &t
 	}
 	if scheduled.Valid {
 		t, err := parseSQLiteTime(scheduled.String)
@@ -763,6 +785,20 @@ func (s *sqliteStore) migrateTaskArchivedAt(db *sql.DB, table string) error {
 		return nil
 	}
 	return fmt.Errorf("migrating %s archived_at column: %w", table, err)
+}
+
+func (s *sqliteStore) migrateTaskModifiedAt(db *sql.DB, table string) error {
+	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN modified_at TEXT", table))
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "no such table") {
+		return nil
+	}
+	return fmt.Errorf("migrating %s modified_at column: %w", table, err)
 }
 
 func encodeTags(tags []string) (sql.NullString, error) {

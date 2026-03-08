@@ -56,6 +56,7 @@ var (
 type rawTaskYAML struct {
 	ID           string   `yaml:"id"`
 	Created      string   `yaml:"created"`
+	ModifiedAt   string   `yaml:"modified_at"`
 	State        string   `yaml:"state"`
 	Scheduled    string   `yaml:"scheduled"`
 	Deadline     string   `yaml:"deadline"`
@@ -64,6 +65,7 @@ type rawTaskYAML struct {
 	WaitingOn    string   `yaml:"waiting_on"`
 	WaitingSince string   `yaml:"waiting_since"`
 	Source       string   `yaml:"source"`
+	ArchivedAt   string   `yaml:"archived_at"`
 }
 
 func rawToTask(raw rawTaskYAML, text string, notes string) (model.Task, error) {
@@ -105,6 +107,20 @@ func rawToTask(raw rawTaskYAML, text string, notes string) (model.Task, error) {
 			return t, fmt.Errorf("field 'waiting_since': %w", err)
 		}
 		t.WaitingSince = &parsed
+	}
+	if raw.ModifiedAt != "" {
+		parsed, err := parseTime(raw.ModifiedAt)
+		if err != nil {
+			return t, fmt.Errorf("field 'modified_at': %w", err)
+		}
+		t.ModifiedAt = &parsed
+	}
+	if raw.ArchivedAt != "" {
+		parsed, err := parseTime(raw.ArchivedAt)
+		if err != nil {
+			return t, fmt.Errorf("field 'archived_at': %w", err)
+		}
+		t.ArchivedAt = &parsed
 	}
 
 	return t, nil

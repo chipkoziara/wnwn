@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 12)
+Last updated: 2026-03-08 (session 13)
 
 ## What This Is
 
@@ -8,13 +8,13 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 98 tests passing)
-- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
+### Data Layer (fully working, 102 tests passing)
+- **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes, including `modified_at` task metadata for recent-change tracking. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
 - **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
 - **Config loader** (`internal/config/`): reads optional `WNWN_CONFIG_FILE`, then XDG config path, then legacy data-dir config for archive behavior flags, default startup view, and configurable keybindings for list/project/view-results actions.
-- **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens. 42 tests total across parse and match.
+- **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens, including `modified` field queries (`modified:>today`, `has:modified`). 45 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
 - **ULID generation** (`internal/id/`): Task IDs using oklog/ulid.
@@ -120,7 +120,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
 
 **Views tab** (`4` or `V` from anywhere, or tab from Projects):
-- Lists the 7 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Recently Modified, Archives)
+- Lists the 8 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Recently Created, Recently Modified, Archives)
 - `enter`: open a view — collects all tasks and filters via the query DSL
 - `W`: launch guided Weekly Review mode
 - `/`: ad-hoc query input — type any DSL query, enter to run
@@ -229,7 +229,7 @@ Prioritized by impact:
 12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (98 total: 8 parser + 42 query + 37 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
+- None currently open. All tests pass (102 total: 8 parser + 45 query + 38 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
 
 ---
 

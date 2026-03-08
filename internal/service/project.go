@@ -155,6 +155,7 @@ func (svc *Service) AddTaskToProject(filename string, subGroupIdx int, text stri
 		Text:    text,
 		State:   state,
 	}
+	task.ModifiedAt = timePtr(task.Created)
 
 	proj.SubGroups[subGroupIdx].Tasks = append(proj.SubGroups[subGroupIdx].Tasks, task)
 
@@ -179,6 +180,7 @@ func (svc *Service) MoveToProject(fromList model.ListType, taskID string, projec
 
 	task := src.Tasks[idx]
 	task.State = newState
+	touchTask(&task, time.Now())
 	src.Tasks = append(src.Tasks[:idx], src.Tasks[idx+1:]...)
 
 	// Read project and add task to sub-group.
@@ -222,6 +224,7 @@ func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, tas
 
 	task := &sg.Tasks[idx]
 	task.State = newState
+	touchTask(task, time.Now())
 
 	if newState == model.StateWaitingFor && task.WaitingSince == nil {
 		now := time.Now().Truncate(24 * time.Hour)
@@ -260,6 +263,7 @@ func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated 
 	// Preserve immutable fields.
 	updated.Created = sg.Tasks[idx].Created
 	updated.Source = sg.Tasks[idx].Source
+	touchTask(&updated, time.Now())
 
 	// Auto-set WaitingSince when transitioning to waiting-for.
 	if updated.State == model.StateWaitingFor && updated.WaitingSince == nil {
@@ -299,6 +303,7 @@ func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID 
 
 	task := sg.Tasks[idx]
 	task.Source = fmt.Sprintf("projects/%s", filename)
+	touchTask(&task, time.Now())
 	if err := svc.archiveTask(task); err != nil {
 		return fmt.Errorf("archiving task: %w", err)
 	}
@@ -353,6 +358,8 @@ func (svc *Service) ReorderTaskInSubGroup(filename string, subGroupIdx int, task
 
 	// Swap.
 	sg.Tasks[idx], sg.Tasks[newIdx] = sg.Tasks[newIdx], sg.Tasks[idx]
+	touchTask(&sg.Tasks[idx], time.Now())
+	touchTask(&sg.Tasks[newIdx], time.Now())
 
 	return svc.Store.WriteProject(proj)
 }
@@ -381,6 +388,7 @@ func (svc *Service) MoveTaskBetweenSubGroups(filename string, fromSgIdx int, tas
 	}
 
 	task := fromSg.Tasks[idx]
+	touchTask(&task, time.Now())
 	fromSg.Tasks = append(fromSg.Tasks[:idx], fromSg.Tasks[idx+1:]...)
 
 	toSg := &proj.SubGroups[toSgIdx]

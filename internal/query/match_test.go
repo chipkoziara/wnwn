@@ -14,15 +14,37 @@ func tp(s string) *time.Time {
 
 func makeTask() model.Task {
 	return model.Task{
-		ID:        "01TEST",
-		Created:   time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC),
-		Text:      "Book flights to Hawaii",
-		State:     model.StateNextAction,
-		Tags:      []string{"travel", "@computer"},
-		Deadline:  tp("2026-03-15"),
-		URL:       "https://example.com",
-		Notes:     "Check Southwest and United.",
-		WaitingOn: "",
+		ID:         "01TEST",
+		Created:    time.Date(2026, 2, 1, 10, 0, 0, 0, time.UTC),
+		ModifiedAt: tp("2026-03-03"),
+		Text:       "Book flights to Hawaii",
+		State:      model.StateNextAction,
+		Tags:       []string{"travel", "@computer"},
+		Deadline:   tp("2026-03-15"),
+		URL:        "https://example.com",
+		Notes:      "Check Southwest and United.",
+		WaitingOn:  "",
+	}
+}
+
+func TestMatchModifiedGt(t *testing.T) {
+	task := makeTask() // modified 2026-03-03
+	if !match(t, "modified:>2026-03-01", task, "") {
+		t.Error("modified:>2026-03-01 should match 2026-03-03")
+	}
+	if match(t, "modified:>2026-03-10", task, "") {
+		t.Error("modified:>2026-03-10 should not match 2026-03-03")
+	}
+}
+
+func TestMatchHasModified(t *testing.T) {
+	task := makeTask()
+	if !match(t, "has:modified", task, "") {
+		t.Error("should match has:modified when modified_at is set")
+	}
+	task.ModifiedAt = nil
+	if match(t, "has:modified", task, "") {
+		t.Error("should not match has:modified when modified_at is nil")
 	}
 }
 

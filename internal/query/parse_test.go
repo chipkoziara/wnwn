@@ -82,6 +82,17 @@ func TestParseDateGt(t *testing.T) {
 	}
 }
 
+func TestParseModifiedDateGt(t *testing.T) {
+	clauses, err := Parse("modified:>2026-03-15", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := clauses[0]
+	if c.Field != "modified" || c.Op != OpGt {
+		t.Errorf("unexpected clause: %+v", c)
+	}
+}
+
 func TestParseDateEq(t *testing.T) {
 	clauses, err := Parse("deadline:2026-03-10", testNow)
 	if err != nil {

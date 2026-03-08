@@ -44,6 +44,8 @@ type Task struct {
 	// Required
 	ID      string    `yaml:"id"`
 	Created time.Time `yaml:"created"`
+	// ModifiedAt tracks the most recent user-visible mutation.
+	ModifiedAt *time.Time `yaml:"modified_at,omitempty"`
 
 	// The task description text (the checkbox line content).
 	Text string `yaml:"-"`

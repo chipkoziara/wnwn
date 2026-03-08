@@ -49,6 +49,7 @@ func (svc *Service) AddToInbox(text string, opts ...TaskOption) (*model.Task, er
 		Created: time.Now().Truncate(time.Minute),
 		Text:    text,
 	}
+	task.ModifiedAt = timePtr(task.Created)
 
 	for _, opt := range opts {
 		opt(&task)
@@ -83,6 +84,7 @@ func (svc *Service) UpdateState(listType model.ListType, taskID string, newState
 
 	task := &list.Tasks[idx]
 	task.State = newState
+	touchTask(task, time.Now())
 
 	if newState == model.StateWaitingFor && task.WaitingSince == nil {
 		now := time.Now().Truncate(24 * time.Hour)
@@ -114,6 +116,7 @@ func (svc *Service) MoveToList(fromList model.ListType, taskID string, toList mo
 
 	task := src.Tasks[idx]
 	task.State = newState
+	touchTask(&task, time.Now())
 
 	// Remove from source.
 	src.Tasks = append(src.Tasks[:idx], src.Tasks[idx+1:]...)
@@ -153,6 +156,7 @@ func (svc *Service) UpdateTask(listType model.ListType, updated model.Task) erro
 	// Preserve immutable fields.
 	updated.Created = list.Tasks[idx].Created
 	updated.Source = list.Tasks[idx].Source
+	touchTask(&updated, time.Now())
 
 	// Auto-set WaitingSince when transitioning to waiting-for.
 	if updated.State == model.StateWaitingFor && updated.WaitingSince == nil {
@@ -187,6 +191,7 @@ func (svc *Service) ArchiveTask(listType model.ListType, taskID string) error {
 
 	task := list.Tasks[idx]
 	task.Source = string(listType)
+	touchTask(&task, time.Now())
 	if err := svc.archiveTask(task); err != nil {
 		return fmt.Errorf("archiving task: %w", err)
 	}
@@ -215,6 +220,7 @@ func (svc *Service) TrashTask(listType model.ListType, taskID string) error {
 func (svc *Service) archiveTask(task model.Task) error {
 	now := time.Now().Truncate(time.Second)
 	filename := "archive.md"
+	task.ModifiedAt = &now
 	task.ArchivedAt = &now
 
 	archive, err := svc.Store.ReadArchive(filename)
@@ -454,4 +460,14 @@ func WithWaitingOn(person string) TaskOption {
 		now := time.Now().Truncate(24 * time.Hour)
 		task.WaitingSince = &now
 	}
+}
+
+func touchTask(task *model.Task, now time.Time) {
+	t := now.Truncate(time.Second)
+	task.ModifiedAt = &t
+}
+
+func timePtr(t time.Time) *time.Time {
+	v := t
+	return &v
 }

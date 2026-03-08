@@ -50,6 +50,8 @@ func matchHas(field string, task model.Task) bool {
 		return task.Deadline != nil
 	case "scheduled":
 		return task.Scheduled != nil
+	case "modified":
+		return task.ModifiedAt != nil
 	case "waiting_on":
 		return task.WaitingOn != ""
 	case "notes":
@@ -99,6 +101,14 @@ func matchEq(c Clause, task model.Task, source string) bool {
 			return strings.Contains(task.Created.Format("2006-01-02"), val)
 		}
 		return sameDay(task.Created, c.Time)
+	case "modified":
+		if task.ModifiedAt == nil {
+			return false
+		}
+		if c.Time.IsZero() {
+			return strings.Contains(task.ModifiedAt.Format("2006-01-02"), val)
+		}
+		return sameDay(*task.ModifiedAt, c.Time)
 	}
 	return false
 }
@@ -115,6 +125,8 @@ func matchDateCmp(c Clause, task model.Task, dir int) bool {
 	case "created":
 		t := task.Created
 		taskDate = &t
+	case "modified":
+		taskDate = task.ModifiedAt
 	}
 	if taskDate == nil {
 		return false

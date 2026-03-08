@@ -34,7 +34,7 @@ const (
 // Clause is a single filter term.
 type Clause struct {
 	Field string // "state", "tag", "deadline", "scheduled", "waiting_on",
-	//            "created", "text", "project", or "" for OpText
+	//            "created", "modified", "text", "project", or "" for OpText
 	Op    Op
 	Value string    // raw string value
 	Time  time.Time // resolved date for OpLt/OpGt/OpEq on date fields; zero if unused
@@ -48,6 +48,7 @@ var validFields = map[string]bool{
 	"scheduled":  true,
 	"waiting_on": true,
 	"created":    true,
+	"modified":   true,
 	"text":       true,
 	"project":    true,
 }
@@ -57,6 +58,7 @@ var dateFields = map[string]bool{
 	"deadline":  true,
 	"scheduled": true,
 	"created":   true,
+	"modified":  true,
 }
 
 // Parse parses a query string into a slice of Clauses.

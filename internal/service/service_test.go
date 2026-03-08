@@ -36,6 +36,12 @@ func TestAddToInbox(t *testing.T) {
 	if task.Created.IsZero() {
 		t.Error("Created is zero")
 	}
+	if task.ModifiedAt == nil {
+		t.Fatal("ModifiedAt is nil")
+	}
+	if !task.ModifiedAt.Equal(task.Created) {
+		t.Errorf("ModifiedAt = %v, want %v", task.ModifiedAt, task.Created)
+	}
 	if task.State != model.StateEmpty {
 		t.Errorf("State = %q, want empty", task.State)
 	}
@@ -194,6 +200,45 @@ func TestUpdateStateDoneStaysInList(t *testing.T) {
 	}
 	if sa.Tasks[0].State != model.StateDone {
 		t.Errorf("state = %q, want done", sa.Tasks[0].State)
+	}
+}
+
+func TestUpdateStateTouchesModifiedAt(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	task, err := svc.AddToInbox("Touch modified")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
+		t.Fatal(err)
+	}
+
+	sa, err := s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sa.Tasks) != 1 || sa.Tasks[0].ModifiedAt == nil {
+		t.Fatal("expected one task with ModifiedAt set")
+	}
+	before := *sa.Tasks[0].ModifiedAt
+
+	time.Sleep(1100 * time.Millisecond)
+	if err := svc.UpdateState(model.ListSingleActions, task.ID, model.StateDone); err != nil {
+		t.Fatal(err)
+	}
+
+	sa, err = s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := sa.Tasks[0].ModifiedAt
+	if after == nil {
+		t.Fatal("ModifiedAt is nil after update")
+	}
+	if !after.After(before) {
+		t.Errorf("ModifiedAt did not advance: before=%v after=%v", before, *after)
 	}
 }
 
