@@ -3,8 +3,9 @@ package model
 // SavedView is a named, persisted query filter.
 // In v1 only hardcoded default views exist; config file persistence is deferred.
 type SavedView struct {
-	Name  string // display name, e.g. "Waiting For"
-	Query string // DSL query string, e.g. "state:waiting-for"
+	Name            string // display name, e.g. "Waiting For"
+	Query           string // DSL query string, e.g. "state:waiting-for"
+	IncludeArchived bool   // include archived tasks in this view's result set
 }
 
 // DefaultViews returns the built-in set of saved views shipped with g-tuddy.
@@ -16,7 +17,7 @@ func DefaultViews() []SavedView {
 		{Name: "Overdue", Query: "deadline:<today"},
 		{Name: "Due This Week", Query: "deadline:<7d"},
 		{Name: "Recently Created", Query: "created:>today"},
-		{Name: "Recently Modified", Query: "modified:>today"},
+		{Name: "Recently Modified", Query: "modified:>today", IncludeArchived: true},
 		{Name: "Archives", Query: ""},
 	}
 }

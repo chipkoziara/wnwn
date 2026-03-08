@@ -13,11 +13,17 @@ func TestDefaultViewsIncludesRecentViews(t *testing.T) {
 			if v.Query != "created:>today" {
 				t.Fatalf("Recently Created query = %q, want %q", v.Query, "created:>today")
 			}
+			if v.IncludeArchived {
+				t.Fatal("Recently Created should not include archived tasks")
+			}
 		}
 		if v.Name == "Recently Modified" {
 			foundModified = true
 			if v.Query != "modified:>today" {
 				t.Fatalf("Recently Modified query = %q, want %q", v.Query, "modified:>today")
+			}
+			if !v.IncludeArchived {
+				t.Fatal("Recently Modified should include archived tasks")
 			}
 		}
 	}

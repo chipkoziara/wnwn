@@ -121,6 +121,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Views tab** (`4` or `V` from anywhere, or tab from Projects):
 - Lists the 8 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Recently Created, Recently Modified, Archives)
+- `Recently Modified` includes archived tasks by default; other non-archive views read active tasks only unless a view is explicitly configured to include archives
 - `enter`: open a view — collects all tasks and filters via the query DSL
 - `W`: launch guided Weekly Review mode
 - `/`: ad-hoc query input — type any DSL query, enter to run

@@ -188,6 +188,7 @@ type Model struct {
 	viewListCursor  int                // cursor in the saved view list
 	activeViewName  string             // name of the currently open view (or "Ad-hoc")
 	activeViewQuery string             // the query string for the active view
+	activeViewInclA bool               // whether the active view includes archived tasks
 	viewResults     []service.ViewTask // filtered tasks for the active view
 	viewCursor      int                // cursor within view results
 
@@ -399,10 +400,11 @@ type projectCreatedMsg struct {
 
 // viewResultsLoadedMsg carries the results of a CollectAllTasks+filter operation.
 type viewResultsLoadedMsg struct {
-	name     string
-	queryStr string
-	results  []service.ViewTask
-	err      error
+	name            string
+	queryStr        string
+	includeArchived bool
+	results         []service.ViewTask
+	err             error
 }
 
 type projectUpdatedMsg struct {
@@ -506,6 +508,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.activeViewName = msg.name
 		m.activeViewQuery = msg.queryStr
+		m.activeViewInclA = msg.includeArchived
 		m.viewResults = msg.results
 		m.viewCursor = 0
 		m.view = viewViewResults
@@ -2609,7 +2612,7 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.detailFromView == viewViewResults {
 			// Re-run the query so the list reflects any ad-hoc changes
 			// the user may have made before discarding.
-			return m, m.runQuery(m.activeViewName, m.activeViewQuery)
+			return m, m.runQuery(m.activeViewName, m.activeViewQuery, m.activeViewInclA)
 		}
 		if m.detailFromView == viewWeeklyReview {
 			return m, m.loadWeeklyReview
@@ -2823,6 +2826,7 @@ func (m Model) saveDetailTask() tea.Cmd {
 	fromView := m.detailFromView
 	viewName := m.activeViewName
 	viewQueryStr := m.activeViewQuery
+	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
 		if isProject {
@@ -2836,7 +2840,7 @@ func (m Model) saveDetailTask() tea.Cmd {
 		// If we came from a view results screen, refresh the view after saving.
 		if fromView == viewViewResults {
 			clauses, _ := query.Parse(viewQueryStr, time.Now())
-			all, err2 := m.svc.CollectAllTasks()
+			all, err2 := m.collectViewTasks(viewName, includeArchived)
 			if err2 != nil {
 				return taskUpdatedMsg{task.Text}
 			}
@@ -2846,7 +2850,7 @@ func (m Model) saveDetailTask() tea.Cmd {
 					filtered = append(filtered, v)
 				}
 			}
-			return viewResultsLoadedMsg{name: viewName, queryStr: viewQueryStr, results: filtered}
+			return viewResultsLoadedMsg{name: viewName, queryStr: viewQueryStr, includeArchived: includeArchived, results: filtered}
 		}
 		if fromView == viewWeeklyReview {
 			return m.loadWeeklyReview()
@@ -3648,22 +3652,17 @@ func (m Model) renderProjectEditView(b *strings.Builder) {
 
 // ── Views ─────────────────────────────────────────────────────────────────
 
-// runQuery collects all tasks and filters them using the given DSL query string.
+// runQuery collects tasks and filters them using the given DSL query string.
 // Returns a viewResultsLoadedMsg — intended to be returned as a tea.Cmd.
-func (m Model) runQuery(name, queryStr string) tea.Cmd {
+func (m Model) runQuery(name, queryStr string, includeArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		clauses, err := query.Parse(queryStr, time.Now())
 		if err != nil {
-			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err}
 		}
-		var all []service.ViewTask
-		if strings.EqualFold(name, "Archives") {
-			all, err = m.svc.CollectArchiveTasks()
-		} else {
-			all, err = m.svc.CollectAllTasks()
-		}
+		all, err := m.collectViewTasks(name, includeArchived)
 		if err != nil {
-			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err}
 		}
 		var filtered []service.ViewTask
 		for _, vt := range all {
@@ -3671,8 +3670,28 @@ func (m Model) runQuery(name, queryStr string) tea.Cmd {
 				filtered = append(filtered, vt)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
 	}
+}
+
+func (m Model) collectViewTasks(name string, includeArchived bool) ([]service.ViewTask, error) {
+	if strings.EqualFold(name, "Archives") {
+		return m.svc.CollectArchiveTasks()
+	}
+
+	all, err := m.svc.CollectAllTasks()
+	if err != nil {
+		return nil, err
+	}
+	if !includeArchived {
+		return all, nil
+	}
+
+	archived, err := m.svc.CollectArchiveTasks()
+	if err != nil {
+		return nil, err
+	}
+	return append(all, archived...), nil
 }
 
 func weeklyStepTitle(step weeklyReviewStep) string {
@@ -3948,7 +3967,7 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.savedViews) > 0 {
 			sv := m.savedViews[m.viewListCursor]
-			return m, m.runQuery(sv.Name, sv.Query)
+			return m, m.runQuery(sv.Name, sv.Query, sv.IncludeArchived)
 		}
 
 	case "/":
@@ -4000,7 +4019,7 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if queryStr == "" {
 				return m, nil
 			}
-			return m, m.runQuery("Ad-hoc", queryStr)
+			return m, m.runQuery("Ad-hoc", queryStr, false)
 		case "esc":
 			m.mode = modeNormal
 			return m, nil
@@ -4134,7 +4153,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Refresh: re-run the current query.
-		return m, m.runQuery(m.activeViewName, m.activeViewQuery)
+		return m, m.runQuery(m.activeViewName, m.activeViewQuery, m.activeViewInclA)
 
 	case "d":
 		if m.actionDisabled("view_results", "done") {
@@ -4247,6 +4266,7 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 	vt := m.viewResults[m.viewCursor]
 	name := m.activeViewName
 	queryStr := m.activeViewQuery
+	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
 		if vt.IsProject {
@@ -4259,9 +4279,9 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 		}
 		// Re-collect and re-filter.
 		clauses, _ := query.Parse(queryStr, time.Now())
-		all, err := m.svc.CollectAllTasks()
+		all, err := m.collectViewTasks(name, includeArchived)
 		if err != nil {
-			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err}
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err}
 		}
 		var filtered []service.ViewTask
 		for _, v := range all {
@@ -4269,7 +4289,7 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
 	}
 }
 
@@ -4281,6 +4301,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 	vt := m.viewResults[m.viewCursor]
 	name := m.activeViewName
 	queryStr := m.activeViewQuery
+	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
 		if vt.IsProject {
@@ -4292,9 +4313,9 @@ func (m Model) viewResultTrash() tea.Cmd {
 			return errMsg{err}
 		}
 		clauses, _ := query.Parse(queryStr, time.Now())
-		all, err2 := m.svc.CollectAllTasks()
+		all, err2 := m.collectViewTasks(name, includeArchived)
 		if err2 != nil {
-			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err2}
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err2}
 		}
 		var filtered []service.ViewTask
 		for _, v := range all {
@@ -4302,7 +4323,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
 	}
 }
 
@@ -4314,6 +4335,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 	vt := m.viewResults[m.viewCursor]
 	name := m.activeViewName
 	queryStr := m.activeViewQuery
+	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
 		if vt.IsProject {
@@ -4325,9 +4347,9 @@ func (m Model) viewResultArchive() tea.Cmd {
 			return errMsg{err}
 		}
 		clauses, _ := query.Parse(queryStr, time.Now())
-		all, err2 := m.svc.CollectAllTasks()
+		all, err2 := m.collectViewTasks(name, includeArchived)
 		if err2 != nil {
-			return viewResultsLoadedMsg{name: name, queryStr: queryStr, err: err2}
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err2}
 		}
 		var filtered []service.ViewTask
 		for _, v := range all {
@@ -4335,7 +4357,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, results: filtered}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
 	}
 }
 
