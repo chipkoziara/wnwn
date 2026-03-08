@@ -633,7 +633,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		// Clear any status message on keypress.
 		m.statusMsg = ""
-		if m.mode == modeNormal && msg.String() == m.undoKey {
+		if m.mode == modeNormal && strings.EqualFold(msg.String(), m.undoKey) {
 			return m.applyUndo()
 		}
 
@@ -745,7 +745,11 @@ func (m Model) reloadProjectDetail() tea.Cmd {
 
 // clearStatusAfter returns a Cmd that clears the status message after a delay.
 func (m Model) clearStatusAfter() tea.Cmd {
-	return tea.Tick(time.Second*3, func(time.Time) tea.Msg {
+	delay := time.Second * 3
+	if m.undoApply != nil && m.undoDuration > delay {
+		delay = m.undoDuration
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg {
 		return clearStatusMsg{}
 	})
 }
