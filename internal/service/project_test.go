@@ -516,3 +516,39 @@ func TestMoveToProjectFromSingleActions(t *testing.T) {
 		t.Errorf("Text = %q", proj.SubGroups[0].Tasks[0].Text)
 	}
 }
+
+func TestRestoreArchivedTaskToProjectSource(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("Restore Project", "Todo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := svc.AddTaskToProject("restore-project.md", 0, "Archived project task", model.StateDone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ArchiveProjectTask("restore-project.md", 0, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	dest, err := svc.RestoreArchivedTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "Project: Restore Project" {
+		t.Fatalf("destination = %q, want %q", dest, "Project: Restore Project")
+	}
+
+	proj, err := s.ReadProject("restore-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proj.SubGroups[0].Tasks) != 1 {
+		t.Fatalf("project tasks = %d, want 1", len(proj.SubGroups[0].Tasks))
+	}
+	if proj.SubGroups[0].Tasks[0].ID != task.ID {
+		t.Fatalf("restored task ID = %q, want %q", proj.SubGroups[0].Tasks[0].ID, task.ID)
+	}
+}

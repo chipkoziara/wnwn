@@ -298,6 +298,7 @@ var defaultKeybindings = map[string]map[string]string{
 		"someday": "m",
 		"waiting": "w",
 		"archive": "A",
+		"restore": "U",
 		"trash":   "x",
 		"refresh": "R",
 	},
@@ -404,6 +405,7 @@ type viewResultsLoadedMsg struct {
 	queryStr        string
 	includeArchived bool
 	results         []service.ViewTask
+	status          string
 	err             error
 }
 
@@ -512,6 +514,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewResults = msg.results
 		m.viewCursor = 0
 		m.view = viewViewResults
+		if msg.status != "" {
+			m.statusMsg = msg.status
+			return m, m.clearStatusAfter()
+		}
 		return m, nil
 
 	case projectEditLoadedMsg:
@@ -3257,6 +3263,9 @@ func (m Model) helpText() string {
 		if !m.actionDisabled("view_results", "archive") {
 			parts = append(parts, "A: archive")
 		}
+		if !m.actionDisabled("view_results", "restore") {
+			parts = append(parts, "U: restore")
+		}
 		if !m.actionDisabled("view_results", "trash") {
 			parts = append(parts, "x: trash")
 		}
@@ -4221,6 +4230,19 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.viewResultArchive()
 
+	case "U":
+		if m.actionDisabled("view_results", "restore") {
+			return m, nil
+		}
+		if len(m.viewResults) == 0 {
+			return m, nil
+		}
+		if !m.selectedViewResultIsArchived() {
+			m.statusMsg = "Only archived tasks can be restored"
+			return m, m.clearStatusAfter()
+		}
+		return m, m.viewResultRestore()
+
 	case "1":
 		m.view = viewList
 		m.currentList = model.ListIn
@@ -4358,6 +4380,36 @@ func (m Model) viewResultArchive() tea.Cmd {
 			}
 		}
 		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
+	}
+}
+
+// viewResultRestore restores the selected archived task back to an active location.
+func (m Model) viewResultRestore() tea.Cmd {
+	if len(m.viewResults) == 0 {
+		return nil
+	}
+	vt := m.viewResults[m.viewCursor]
+	name := m.activeViewName
+	queryStr := m.activeViewQuery
+	includeArchived := m.activeViewInclA
+	return func() tea.Msg {
+		destination, err := m.svc.RestoreArchivedTask(vt.Task.ID)
+		if err != nil {
+			return errMsg{err}
+		}
+		clauses, _ := query.Parse(queryStr, time.Now())
+		all, err2 := m.collectViewTasks(name, includeArchived)
+		if err2 != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, err: err2}
+		}
+		var filtered []service.ViewTask
+		for _, v := range all {
+			if query.MatchAll(clauses, v.Task, v.Source) {
+				filtered = append(filtered, v)
+			}
+		}
+		status := fmt.Sprintf("Restored: %s -> %s", vt.Task.Text, destination)
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, status: status}
 	}
 }
 

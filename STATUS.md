@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 13)
+Last updated: 2026-03-08 (session 14)
 
 ## What This Is
 
@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 102 tests passing)
+### Data Layer (fully working, 105 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes, including `modified_at` task metadata for recent-change tracking. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -23,6 +23,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - Inbox: add tasks with functional options (WithDeadline, WithTags, etc.)
   - State transitions: auto-sets waiting_since. done/canceled now stay in place by default.
   - Explicit archiving: `ArchiveTask` (list tasks) and `ArchiveProjectTask` (project tasks) move items into archive storage on demand.
+  - Restore from archive: `RestoreArchivedTask` returns archived tasks to their recorded source (inbox, single-actions, or project), with inbox fallback when source is unavailable.
   - Trash semantics: trashed tasks are permanently deleted and are not archived.
   - List operations: move between inbox/single-actions, refile to projects
   - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
@@ -144,10 +145,11 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `s` prefix + (`m`/`d`/`c`/`w`) for grouped state actions; direct quick states remain available (`m`/`d`/`c`/`w`)
 - `t` prefix + (`d`/`s`) for quick deadline/scheduled edit
 - `A`: archive selected task (source-aware); view refreshes automatically
+- `U`: restore selected archived task to its original source (or inbox fallback); view refreshes automatically
 - `x`: trash (permanent delete for both list and project tasks); view refreshes
 - `R`: manual refresh (re-collect and re-filter)
 - `esc`: back to view list
-- Archive view is read-only: opening detail or mutating state on archived rows is blocked with a status message
+- Archived rows are protected from edit/state/archive/trash mutations, but can be restored with `U`
 
 **Project edit view** (`viewProjectEdit`, opened with `E` from project list or detail):
 - Navigable field list: title, state, tags, deadline, URL, definition of done
@@ -230,7 +232,7 @@ Prioritized by impact:
 12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (102 total: 8 parser + 45 query + 38 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
+- None currently open. All tests pass (105 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
 
 ---
 

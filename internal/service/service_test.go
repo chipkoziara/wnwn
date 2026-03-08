@@ -358,6 +358,93 @@ func TestMoveNotFoundReturnsError(t *testing.T) {
 	}
 }
 
+func TestRestoreArchivedTaskToOriginalList(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	task, err := svc.AddToInbox("Restore me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ArchiveTask(model.ListSingleActions, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	dest, err := svc.RestoreArchivedTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "Single Actions" {
+		t.Fatalf("destination = %q, want %q", dest, "Single Actions")
+	}
+
+	sa, err := s.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sa.Tasks) != 1 {
+		t.Fatalf("single-actions has %d tasks, want 1", len(sa.Tasks))
+	}
+	if sa.Tasks[0].ID != task.ID {
+		t.Fatalf("restored task ID = %q, want %q", sa.Tasks[0].ID, task.ID)
+	}
+	if sa.Tasks[0].ArchivedAt != nil {
+		t.Fatal("restored task should not have ArchivedAt")
+	}
+
+	archive, err := s.ReadArchive("archive.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.Tasks) != 0 {
+		t.Fatalf("archive has %d tasks, want 0", len(archive.Tasks))
+	}
+}
+
+func TestRestoreArchivedTaskFallbackToInboxWhenSourceMissing(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	task, err := svc.AddToInbox("Restore fallback")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ArchiveTask(model.ListIn, task.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	archive, err := s.ReadArchive("archive.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(archive.Tasks) != 1 {
+		t.Fatalf("archive has %d tasks, want 1", len(archive.Tasks))
+	}
+	archive.Tasks[0].Source = "projects/missing-project.md"
+	if err := s.WriteArchive("archive.md", archive); err != nil {
+		t.Fatal(err)
+	}
+
+	dest, err := svc.RestoreArchivedTask(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dest != "Inbox (source unavailable)" {
+		t.Fatalf("destination = %q, want %q", dest, "Inbox (source unavailable)")
+	}
+
+	inbox, err := s.ReadList(model.ListIn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox.Tasks) != 1 {
+		t.Fatalf("inbox has %d tasks, want 1", len(inbox.Tasks))
+	}
+}
+
 func TestMultipleAddsPreserveOrder(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)

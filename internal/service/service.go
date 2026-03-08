@@ -6,6 +6,7 @@ package service
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/wnwn/wnwn/internal/id"
@@ -198,6 +199,38 @@ func (svc *Service) ArchiveTask(listType model.ListType, taskID string) error {
 
 	list.Tasks = append(list.Tasks[:idx], list.Tasks[idx+1:]...)
 	return svc.Store.WriteList(list)
+}
+
+// RestoreArchivedTask moves a task from archive storage back into an active list
+// or project based on its recorded Source metadata.
+func (svc *Service) RestoreArchivedTask(taskID string) (string, error) {
+	archive, err := svc.Store.ReadArchive("archive.md")
+	if err != nil {
+		return "", fmt.Errorf("reading archive: %w", err)
+	}
+
+	idx := findTaskIndex(archive.Tasks, taskID)
+	if idx == -1 {
+		return "", fmt.Errorf("archived task %s not found", taskID)
+	}
+
+	task := archive.Tasks[idx]
+	fromSource := task.Source
+	touchTask(&task, time.Now())
+	task.ArchivedAt = nil
+	task.Source = ""
+
+	destination, err := svc.restoreTaskToSource(task, fromSource)
+	if err != nil {
+		return "", err
+	}
+
+	archive.Tasks = append(archive.Tasks[:idx], archive.Tasks[idx+1:]...)
+	if err := svc.Store.WriteArchive("archive.md", archive); err != nil {
+		return "", fmt.Errorf("writing archive: %w", err)
+	}
+
+	return destination, nil
 }
 
 // TrashTask permanently removes a task from a list (no archive).
@@ -470,4 +503,60 @@ func touchTask(task *model.Task, now time.Time) {
 func timePtr(t time.Time) *time.Time {
 	v := t
 	return &v
+}
+
+func (svc *Service) restoreTaskToSource(task model.Task, source string) (string, error) {
+	switch source {
+	case string(model.ListIn):
+		list, err := svc.Store.ReadList(model.ListIn)
+		if err != nil {
+			return "", fmt.Errorf("reading inbox: %w", err)
+		}
+		list.Tasks = append(list.Tasks, task)
+		if err := svc.Store.WriteList(list); err != nil {
+			return "", fmt.Errorf("writing inbox: %w", err)
+		}
+		return "Inbox", nil
+	case string(model.ListSingleActions):
+		list, err := svc.Store.ReadList(model.ListSingleActions)
+		if err != nil {
+			return "", fmt.Errorf("reading single-actions: %w", err)
+		}
+		list.Tasks = append(list.Tasks, task)
+		if err := svc.Store.WriteList(list); err != nil {
+			return "", fmt.Errorf("writing single-actions: %w", err)
+		}
+		return "Single Actions", nil
+	}
+
+	if strings.HasPrefix(source, "projects/") {
+		filename := strings.TrimPrefix(source, "projects/")
+		proj, err := svc.Store.ReadProject(filename)
+		if err == nil {
+			if len(proj.SubGroups) == 0 {
+				proj.SubGroups = append(proj.SubGroups, model.SubGroup{Title: "Restored", ID: id.New()})
+			}
+			proj.SubGroups[0].Tasks = append(proj.SubGroups[0].Tasks, task)
+			if err := svc.Store.WriteProject(proj); err != nil {
+				return "", fmt.Errorf("writing project %s: %w", filename, err)
+			}
+			if proj.Title != "" {
+				return "Project: " + proj.Title, nil
+			}
+			return "Project: " + filename, nil
+		}
+	}
+
+	list, err := svc.Store.ReadList(model.ListIn)
+	if err != nil {
+		return "", fmt.Errorf("reading inbox fallback: %w", err)
+	}
+	list.Tasks = append(list.Tasks, task)
+	if err := svc.Store.WriteList(list); err != nil {
+		return "", fmt.Errorf("writing inbox fallback: %w", err)
+	}
+	if source == "" {
+		return "Inbox", nil
+	}
+	return "Inbox (source unavailable)", nil
 }
