@@ -156,9 +156,10 @@ type Model struct {
 	projCursor     int            // cursor within project detail (flat index across sub-groups)
 
 	// Refile state: task being refiled to a project.
-	refileTaskID   string
-	refileTaskText string
-	refileFromList model.ListType
+	refileTaskID    string
+	refileTaskText  string
+	refileFromList  model.ListType
+	refilePrevState model.TaskState
 
 	// Sub-group picker state: task being moved between sub-groups.
 	moveTaskID    string
@@ -207,6 +208,14 @@ type Model struct {
 
 	keybindings    map[string]map[string]string
 	disabledAction map[string]map[string]bool
+
+	undoEnabled  bool
+	undoDuration time.Duration
+	undoKey      string
+	undoSeq      int
+	undoApply    func() error
+	undoReload   tea.Cmd
+	undoSuccess  string
 }
 
 // New creates a new TUI model backed by the given data directory.
@@ -241,6 +250,9 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 		savedViews:     model.DefaultViews(),
 		keybindings:    keybindings,
 		disabledAction: disabled,
+		undoEnabled:    cfg.UI.UndoGraceEnabled,
+		undoDuration:   time.Duration(cfg.UI.UndoGraceSeconds) * time.Second,
+		undoKey:        cfg.UI.UndoKey,
 	}
 
 	switch strings.ToLower(cfg.UI.DefaultView) {
@@ -385,7 +397,12 @@ func (m Model) loadCurrentList() tea.Msg {
 // Messages
 type listLoadedMsg struct{ list *model.TaskList }
 type taskAddedMsg struct{ task *model.Task }
-type taskRefiledMsg struct{ text string }
+type taskRefiledMsg struct {
+	text        string
+	undoApply   func() error
+	undoPrompt  string
+	undoSuccess string
+}
 type taskUpdatedMsg struct{ text string }
 type clearStatusMsg struct{}
 type projectsLoadedMsg struct{ projects []service.ProjectSummary }
@@ -406,6 +423,9 @@ type viewResultsLoadedMsg struct {
 	includeArchived bool
 	results         []service.ViewTask
 	status          string
+	undoApply       func() error
+	undoPrompt      string
+	undoSuccess     string
 	err             error
 }
 
@@ -428,6 +448,7 @@ type weeklyReviewLoadedMsg struct {
 }
 
 type clearPrefixMsg struct{}
+type undoExpiredMsg struct{ seq int }
 
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -452,7 +473,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == viewProcessInbox {
 			return m, nil
 		}
-		m.statusMsg = fmt.Sprintf("Refiled: %s", msg.text)
+		if msg.undoApply == nil {
+			m.statusMsg = fmt.Sprintf("Refiled: %s", msg.text)
+		}
 		// Reload whatever view we're on.
 		var reload tea.Cmd
 		if m.view == viewList {
@@ -462,7 +485,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.view == viewProjectDetail && m.activeFilename != "" {
 			reload = m.reloadProjectDetail()
 		}
-		return m, tea.Batch(reload, m.clearStatusAfter())
+		undoTick := m.setUndo(msg.undoPrompt, msg.undoApply, reload, msg.undoSuccess)
+		return m, tea.Batch(reload, undoTick, m.clearStatusAfter())
 
 	case taskUpdatedMsg:
 		m.statusMsg = fmt.Sprintf("Saved: %s", msg.text)
@@ -514,11 +538,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewResults = msg.results
 		m.viewCursor = 0
 		m.view = viewViewResults
+		undoTick := m.setUndo(msg.undoPrompt, msg.undoApply, m.runQuery(msg.name, msg.queryStr, msg.includeArchived), msg.undoSuccess)
 		if msg.status != "" {
 			m.statusMsg = msg.status
-			return m, m.clearStatusAfter()
+			return m, tea.Batch(undoTick, m.clearStatusAfter())
 		}
-		return m, nil
+		return m, undoTick
 
 	case projectEditLoadedMsg:
 		m.projEditProject = msg.project
@@ -595,6 +620,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingPrefix = prefixNone
 		return m, nil
 
+	case undoExpiredMsg:
+		if msg.seq == m.undoSeq {
+			m.clearUndo()
+		}
+		return m, nil
+
 	case errMsg:
 		m.err = msg.err
 		return m, nil
@@ -602,6 +633,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		// Clear any status message on keypress.
 		m.statusMsg = ""
+		if m.mode == modeNormal && msg.String() == m.undoKey {
+			return m.applyUndo()
+		}
 
 		switch m.mode {
 		case modeAdding:
@@ -739,6 +773,48 @@ func (m *Model) cancelPrefix() {
 	m.pendingPrefix = prefixNone
 }
 
+func (m *Model) clearUndo() {
+	m.undoApply = nil
+	m.undoReload = nil
+	m.undoSuccess = ""
+}
+
+func (m *Model) setUndo(prompt string, apply func() error, reload tea.Cmd, success string) tea.Cmd {
+	if !m.undoEnabled || m.undoDuration <= 0 || apply == nil {
+		return nil
+	}
+	m.undoSeq++
+	m.undoApply = apply
+	m.undoReload = reload
+	m.undoSuccess = success
+	if prompt != "" {
+		m.statusMsg = fmt.Sprintf("%s — press %s to undo (%ds)", prompt, strings.ToUpper(m.undoKey), int(m.undoDuration.Seconds()))
+	}
+	seq := m.undoSeq
+	return tea.Tick(m.undoDuration, func(time.Time) tea.Msg {
+		return undoExpiredMsg{seq: seq}
+	})
+}
+
+func (m *Model) applyUndo() (tea.Model, tea.Cmd) {
+	if m.undoApply == nil {
+		return m, nil
+	}
+	apply := m.undoApply
+	reload := m.undoReload
+	success := m.undoSuccess
+	m.clearUndo()
+	if err := apply(); err != nil {
+		m.statusMsg = fmt.Sprintf("Undo failed: %v", err)
+		return m, m.clearStatusAfter()
+	}
+	if success == "" {
+		success = "Undid last change"
+	}
+	m.statusMsg = success
+	return m, tea.Batch(reload, m.clearStatusAfter())
+}
+
 // updateNormal handles keys in normal (browsing) mode.
 func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	raw := msg.String()
@@ -752,11 +828,29 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			task := m.list.Tasks[m.cursor]
 			switch raw {
 			case "d":
-				_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
-				return m, m.loadCurrentList
+				if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateDone); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task marked done",
+					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+					m.loadCurrentList,
+					"Undid done state",
+				)
+				return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 			case "c":
-				_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled)
-				return m, m.loadCurrentList
+				if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task canceled",
+					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+					m.loadCurrentList,
+					"Undid canceled state",
+				)
+				return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 			case "w":
 				return m, m.setStateWaiting(task.ID, task.Text)
 			case "m":
@@ -775,12 +869,13 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "Route to single-actions only from inbox"
 					return m, m.clearStatusAfter()
 				}
-				return m, m.refileTask(task.ID, task.Text, model.ListSingleActions, model.StateNextAction)
+				return m, m.refileTask(task, model.ListSingleActions, model.StateNextAction)
 			}
 			if raw == "p" {
 				m.refileTaskID = task.ID
 				m.refileTaskText = task.Text
 				m.refileFromList = m.currentList
+				m.refilePrevState = task.State
 				m.mode = modePickingProject
 				m.cursor = 0
 				return m, m.loadProjects
@@ -946,6 +1041,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.refileTaskID = task.ID
 		m.refileTaskText = task.Text
 		m.refileFromList = m.currentList
+		m.refilePrevState = task.State
 		m.mode = modePickingProject
 		m.cursor = 0
 		return m, m.loadProjects
@@ -968,8 +1064,17 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateDone)
-			return m, m.loadCurrentList
+			if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateDone); err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, m.clearStatusAfter()
+			}
+			undoTick := m.setUndo(
+				"Task marked done",
+				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+				m.loadCurrentList,
+				"Undid done state",
+			)
+			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
 
 	// Mark canceled.
@@ -979,8 +1084,17 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			_ = m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled)
-			return m, m.loadCurrentList
+			if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled); err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, m.clearStatusAfter()
+			}
+			undoTick := m.setUndo(
+				"Task canceled",
+				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+				m.loadCurrentList,
+				"Undid canceled state",
+			)
+			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
 
 	// Archive task.
@@ -990,9 +1104,20 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			_ = m.svc.ArchiveTask(m.list.Type, task.ID)
-			m.statusMsg = "Task archived"
-			return m, tea.Batch(m.loadCurrentList, m.clearStatusAfter())
+			if err := m.svc.ArchiveTask(m.list.Type, task.ID); err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, m.clearStatusAfter()
+			}
+			undoTick := m.setUndo(
+				"Task archived",
+				func() error {
+					_, err := m.svc.RestoreArchivedTask(task.ID)
+					return err
+				},
+				m.loadCurrentList,
+				"Undid archive",
+			)
+			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
 
 	// Trash task.
@@ -1002,8 +1127,20 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			_ = m.svc.TrashTask(m.list.Type, task.ID)
-			return m, m.loadCurrentList
+			if err := m.svc.TrashTask(m.list.Type, task.ID); err != nil {
+				m.statusMsg = fmt.Sprintf("Error: %v", err)
+				return m, m.clearStatusAfter()
+			}
+			undoTick := m.setUndo(
+				"Task trashed",
+				func() error {
+					_, err := m.svc.RestoreTask(task, string(m.list.Type))
+					return err
+				},
+				m.loadCurrentList,
+				"Undid trash",
+			)
+			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
 
 	// Process inbox (capital P) — guided GTD decision tree.
@@ -1032,13 +1169,17 @@ func (m Model) loadInboxForProcessing() tea.Msg {
 }
 
 // refileTask moves a task from the current list to a destination list.
-func (m Model) refileTask(taskID, text string, destList model.ListType, newState model.TaskState) tea.Cmd {
+func (m Model) refileTask(task model.Task, destList model.ListType, newState model.TaskState) tea.Cmd {
+	fromList := m.currentList
 	return func() tea.Msg {
-		err := m.svc.MoveToList(m.currentList, taskID, destList, newState)
+		err := m.svc.MoveToList(fromList, task.ID, destList, newState)
 		if err != nil {
 			return errMsg{err}
 		}
-		return taskRefiledMsg{text}
+		undoApply := func() error {
+			return m.svc.MoveToList(destList, task.ID, fromList, task.State)
+		}
+		return taskRefiledMsg{text: task.Text, undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: "Undid refile"}
 	}
 }
 
@@ -1057,7 +1198,7 @@ func (m Model) setStateSomeday(taskID, text string) tea.Cmd {
 				return errMsg{err}
 			}
 		}
-		return taskRefiledMsg{text}
+		return taskRefiledMsg{text: text}
 	}
 }
 
@@ -1076,7 +1217,7 @@ func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
 				return errMsg{err}
 			}
 		}
-		return taskRefiledMsg{text}
+		return taskRefiledMsg{text: text}
 	}
 }
 
@@ -1327,6 +1468,7 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		m.refileTaskID = m.processTask.ID
 		m.refileTaskText = m.processTask.Text
 		m.refileFromList = model.ListIn
+		m.refilePrevState = m.processTask.State
 		m.mode = modePickingProject
 		m.cursor = 0
 		return m, m.loadProjects
@@ -1492,11 +1634,33 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			switch raw {
 			case "d":
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone)
-				return m, m.reloadProjectDetail()
+				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task marked done",
+					func() error {
+						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
+					},
+					m.reloadProjectDetail(),
+					"Undid done state",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "c":
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled)
-				return m, m.reloadProjectDetail()
+				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task canceled",
+					func() error {
+						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
+					},
+					m.reloadProjectDetail(),
+					"Undid canceled state",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "w":
 				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateWaitingFor)
 				return m, m.reloadProjectDetail()
@@ -1618,8 +1782,19 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone)
-				return m, m.reloadProjectDetail()
+				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task marked done",
+					func() error {
+						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
+					},
+					m.reloadProjectDetail(),
+					"Undid done state",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
 		}
 
@@ -1631,8 +1806,19 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled)
-				return m, m.reloadProjectDetail()
+				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task canceled",
+					func() error {
+						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
+					},
+					m.reloadProjectDetail(),
+					"Undid canceled state",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
 		}
 
@@ -1644,9 +1830,20 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				_ = m.svc.ArchiveProjectTask(m.activeFilename, item.sgIdx, item.task.ID)
-				m.statusMsg = "Task archived"
-				return m, tea.Batch(m.reloadProjectDetail(), m.clearStatusAfter())
+				if err := m.svc.ArchiveProjectTask(m.activeFilename, item.sgIdx, item.task.ID); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				undoTick := m.setUndo(
+					"Task archived",
+					func() error {
+						_, err := m.svc.RestoreArchivedTask(item.task.ID)
+						return err
+					},
+					m.reloadProjectDetail(),
+					"Undid archive",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
 		}
 
@@ -1658,8 +1855,21 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				_ = m.svc.TrashProjectTask(m.activeFilename, item.sgIdx, item.task.ID)
-				return m, m.reloadProjectDetail()
+				if err := m.svc.TrashProjectTask(m.activeFilename, item.sgIdx, item.task.ID); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				source := fmt.Sprintf("projects/%s", m.activeFilename)
+				undoTick := m.setUndo(
+					"Task trashed",
+					func() error {
+						_, err := m.svc.RestoreTask(item.task, source)
+						return err
+					},
+					m.reloadProjectDetail(),
+					"Undid trash",
+				)
+				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
 		}
 
@@ -1761,6 +1971,7 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		m.refileTaskID = ""
 		m.refileTaskText = ""
+		m.refilePrevState = model.StateEmpty
 		if m.view == viewProcessInbox {
 			// Return to the route step, not the list.
 			m.processStep = stepRoute
@@ -1852,7 +2063,7 @@ func (m Model) updatePickingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errMsg{err}
 				}
-				return taskRefiledMsg{fmt.Sprintf("Moved \"%s\" to %s", taskText, m.activeProject.SubGroups[toSgIdx].Title)}
+				return taskRefiledMsg{text: fmt.Sprintf("Moved \"%s\" to %s", taskText, m.activeProject.SubGroups[toSgIdx].Title)}
 			}
 		}
 	}
@@ -1864,6 +2075,8 @@ func (m Model) updatePickingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
 	taskID := m.refileTaskID
 	taskText := m.refileTaskText
+	fromList := m.refileFromList
+	oldState := m.refilePrevState
 	return func() tea.Msg {
 		// Ensure project has at least one sub-group.
 		proj, err := m.svc.GetProject(filename)
@@ -1878,11 +2091,14 @@ func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
 				return errMsg{err}
 			}
 		}
-		err = m.svc.MoveToProject(m.refileFromList, taskID, filename, sgIdx, model.StateNextAction)
+		err = m.svc.MoveToProject(fromList, taskID, filename, sgIdx, model.StateNextAction)
 		if err != nil {
 			return errMsg{err}
 		}
-		return taskRefiledMsg{fmt.Sprintf("%s -> %s", taskText, projTitle)}
+		undoApply := func() error {
+			return m.svc.MoveTaskFromProjectToList(filename, sgIdx, taskID, fromList, oldState)
+		}
+		return taskRefiledMsg{text: fmt.Sprintf("%s -> %s", taskText, projTitle), undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: "Undid refile"}
 	}
 }
 
@@ -1930,7 +2146,7 @@ func (m Model) updateAddingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return errMsg{err}
 			}
-			return taskRefiledMsg{fmt.Sprintf("Added sub-group: %s", title)}
+			return taskRefiledMsg{text: fmt.Sprintf("Added sub-group: %s", title)}
 		}
 
 	case "esc":
@@ -1960,7 +2176,7 @@ func (m Model) updateAddingProjectTask(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 			if err != nil {
 				return errMsg{err}
 			}
-			return taskRefiledMsg{fmt.Sprintf("Added: %s", text)}
+			return taskRefiledMsg{text: fmt.Sprintf("Added: %s", text)}
 		}
 
 	case "esc":
@@ -4291,6 +4507,7 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
+		oldState := vt.Task.State
 		if vt.IsProject {
 			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, newState)
 		} else {
@@ -4311,7 +4528,13 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
+		undoApply := func() error {
+			if vt.IsProject {
+				return m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, oldState)
+			}
+			return m.svc.UpdateState(vt.ListType, vt.Task.ID, oldState)
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "State updated", undoSuccess: "Undid state change"}
 	}
 }
 
@@ -4326,6 +4549,10 @@ func (m Model) viewResultTrash() tea.Cmd {
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
+		source := vt.Task.Source
+		if source == "" {
+			source = vt.Source
+		}
 		if vt.IsProject {
 			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
@@ -4345,7 +4572,11 @@ func (m Model) viewResultTrash() tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
+		undoApply := func() error {
+			_, err := m.svc.RestoreTask(vt.Task, source)
+			return err
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task trashed", undoSuccess: "Undid trash"}
 	}
 }
 
@@ -4379,7 +4610,11 @@ func (m Model) viewResultArchive() tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered}
+		undoApply := func() error {
+			_, err := m.svc.RestoreArchivedTask(vt.Task.ID)
+			return err
+		}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task archived", undoSuccess: "Undid archive"}
 	}
 }
 

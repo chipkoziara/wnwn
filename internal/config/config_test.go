@@ -78,3 +78,29 @@ func TestLoad_KeysDisableNormalized(t *testing.T) {
 		t.Fatalf("unexpected normalized disable list: %#v", cfg.Keys.Disable.List)
 	}
 }
+
+func TestLoad_UndoGraceDefaultsAndNormalize(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("WNWN_CONFIG_FILE", "")
+
+	configPath := filepath.Join(xdg, "wnwn", Filename)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[ui]\nundo_grace_seconds=0\nundo_key='  U '\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.UI.UndoGraceSeconds != 30 {
+		t.Fatalf("undo_grace_seconds = %d, want 30", cfg.UI.UndoGraceSeconds)
+	}
+	if cfg.UI.UndoKey != "u" {
+		t.Fatalf("undo_key = %q, want %q", cfg.UI.UndoKey, "u")
+	}
+}

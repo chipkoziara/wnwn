@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 14)
+Last updated: 2026-03-08 (session 15)
 
 ## What This Is
 
@@ -8,12 +8,12 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 105 tests passing)
+### Data Layer (fully working, 106 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes, including `modified_at` task metadata for recent-change tracking. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
 - **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
-- **Config loader** (`internal/config/`): reads optional `WNWN_CONFIG_FILE`, then XDG config path, then legacy data-dir config for archive behavior flags, default startup view, and configurable keybindings for list/project/view-results actions.
+- **Config loader** (`internal/config/`): reads optional `WNWN_CONFIG_FILE`, then XDG config path, then legacy data-dir config for archive behavior flags, default startup view, configurable undo grace settings (`ui.undo_grace_enabled`, `ui.undo_grace_seconds`, `ui.undo_key`), and configurable keybindings for list/project/view-results actions.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens, including `modified` field queries (`modified:>today`, `has:modified`). 45 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
@@ -74,6 +74,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `c`: mark canceled (stays in list)
 - `A`: archive selected task
 - `x`: trash (permanent delete)
+- Done/canceled/archive/trash/refile actions support undo during the configurable grace window (`ui.undo_key`)
 
 **Process Inbox mode** (`P` from inbox):
 - Guided GTD decision tree, walks through inbox items FIFO one at a time
@@ -95,6 +96,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `t` prefix + (`d`/`s`): deadline/scheduled quick edit
 - `A`: archive selected task
 - `x`: trash (permanent delete)
+- Done/canceled/archive/trash/refile actions support undo during the configurable grace window (`ui.undo_key`)
 
 **Projects list view:**
 - Shows all projects with state, task count, deadline, next action preview
@@ -112,6 +114,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `c`: mark task canceled
 - `A`: archive selected task
 - `x`: trash selected task (permanent delete)
+- Done/canceled/archive/trash/refile actions support undo during the configurable grace window (`ui.undo_key`)
 - `E`: open project edit view (edit metadata)
 - `ctrl+j`/`ctrl+k`: reorder task within sub-group (cursor follows)
 - `m`: move task to a different sub-group (picker)
@@ -150,6 +153,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `R`: manual refresh (re-collect and re-filter)
 - `esc`: back to view list
 - Archived rows are protected from edit/state/archive/trash mutations, but can be restored with `U`
+- Done/canceled/archive/trash/refile actions support undo during the configurable grace window (`ui.undo_key`)
 
 **Project edit view** (`viewProjectEdit`, opened with `E` from project list or detail):
 - Navigable field list: title, state, tags, deadline, URL, definition of done
@@ -232,7 +236,7 @@ Prioritized by impact:
 12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (105 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
+- None currently open. All tests pass (106 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 5 config + 2 model).
 
 ---
 

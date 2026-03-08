@@ -505,6 +505,52 @@ func timePtr(t time.Time) *time.Time {
 	return &v
 }
 
+// RestoreTask appends a task back into active storage using the given source.
+// It is intended for undo flows (e.g. restoring trashed tasks).
+func (svc *Service) RestoreTask(task model.Task, source string) (string, error) {
+	task.Source = ""
+	task.ArchivedAt = nil
+	touchTask(&task, time.Now())
+	return svc.restoreTaskToSource(task, source)
+}
+
+// MoveTaskFromProjectToList moves a task from a project sub-group to a list.
+func (svc *Service) MoveTaskFromProjectToList(filename string, fromSgIdx int, taskID string, toList model.ListType, newState model.TaskState) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return fmt.Errorf("reading project: %w", err)
+	}
+	if fromSgIdx < 0 || fromSgIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("source sub-group index %d out of range", fromSgIdx)
+	}
+
+	sg := &proj.SubGroups[fromSgIdx]
+	idx := findTaskIndex(sg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	task := sg.Tasks[idx]
+	task.State = newState
+	touchTask(&task, time.Now())
+	sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+
+	list, err := svc.Store.ReadList(toList)
+	if err != nil {
+		return fmt.Errorf("reading destination list: %w", err)
+	}
+	list.Tasks = append(list.Tasks, task)
+
+	if err := svc.Store.WriteProject(proj); err != nil {
+		return fmt.Errorf("writing project: %w", err)
+	}
+	if err := svc.Store.WriteList(list); err != nil {
+		return fmt.Errorf("writing destination list: %w", err)
+	}
+
+	return nil
+}
+
 func (svc *Service) restoreTaskToSource(task model.Task, source string) (string, error) {
 	switch source {
 	case string(model.ListIn):

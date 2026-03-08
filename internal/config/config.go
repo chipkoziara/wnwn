@@ -25,7 +25,10 @@ type ArchiveConfig struct {
 }
 
 type UIConfig struct {
-	DefaultView string `toml:"default_view"`
+	DefaultView      string `toml:"default_view"`
+	UndoGraceEnabled bool   `toml:"undo_grace_enabled"`
+	UndoGraceSeconds int    `toml:"undo_grace_seconds"`
+	UndoKey          string `toml:"undo_key"`
 }
 
 type KeysConfig struct {
@@ -47,7 +50,7 @@ func Default() Config {
 			AutoArchiveDone:     false,
 			AutoArchiveCanceled: false,
 		},
-		UI: UIConfig{DefaultView: "inbox"},
+		UI: UIConfig{DefaultView: "inbox", UndoGraceEnabled: true, UndoGraceSeconds: 30, UndoKey: "u"},
 		Keys: KeysConfig{
 			List:        map[string]string{},
 			Project:     map[string]string{},
@@ -113,6 +116,13 @@ func (c *Config) normalize() {
 	c.UI.DefaultView = strings.TrimSpace(strings.ToLower(c.UI.DefaultView))
 	if c.UI.DefaultView == "" {
 		c.UI.DefaultView = "inbox"
+	}
+	if c.UI.UndoGraceSeconds <= 0 {
+		c.UI.UndoGraceSeconds = 30
+	}
+	c.UI.UndoKey = strings.TrimSpace(strings.ToLower(c.UI.UndoKey))
+	if c.UI.UndoKey == "" {
+		c.UI.UndoKey = "u"
 	}
 	if c.Keys.List == nil {
 		c.Keys.List = map[string]string{}
