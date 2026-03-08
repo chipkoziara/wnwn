@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-07 (session 11)
+Last updated: 2026-03-08 (session 12)
 
 ## What This Is
 
@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 96 tests passing)
+### Data Layer (fully working, 98 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -120,7 +120,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
 
 **Views tab** (`4` or `V` from anywhere, or tab from Projects):
-- Lists the 6 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Archives)
+- Lists the 7 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Recently Modified, Archives)
 - `enter`: open a view — collects all tasks and filters via the query DSL
 - `W`: launch guided Weekly Review mode
 - `/`: ad-hoc query input — type any DSL query, enter to run
@@ -223,14 +223,13 @@ Prioritized by impact:
 
 ### Power Features (prioritized)
 
-9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml still deferred (see item 12).
-10. **"Recently Modified" default view** — Quick win now that Views are shipped. Add a `created:>today` (or similar) built-in view to `model.DefaultViews()` to address the "accidental refile" feedback in ENHANCEMENTS.md.
-11. **Config file** - ✅ Foundation shipped (session 8): config now supports archive auto-archive toggles, startup default view, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, saved view persistence, review reminders.
-12. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
-13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml still deferred (see item 11).
+10. **Config file** - ✅ Foundation shipped (session 8): config now supports archive auto-archive toggles, startup default view, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, saved view persistence, review reminders.
+11. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
+12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (96 total: 8 parser + 42 query + 37 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config).
+- None currently open. All tests pass (98 total: 8 parser + 42 query + 37 service + 3 writer/parser roundtrip + 2 sqlite store + 4 config + 2 model).
 
 ---
 
