@@ -16,8 +16,8 @@ func DefaultViews() []SavedView {
 		{Name: "Someday / Maybe", Query: "state:some-day/maybe"},
 		{Name: "Overdue", Query: "deadline:<today"},
 		{Name: "Due This Week", Query: "deadline:<7d"},
-		{Name: "Recently Created", Query: "created:>today"},
-		{Name: "Recently Modified", Query: "modified:>today", IncludeArchived: true},
+		{Name: "Recently Created", Query: "created:today"},
+		{Name: "Recently Modified", Query: "modified:today", IncludeArchived: true},
 		{Name: "Archives", Query: ""},
 	}
 }
