@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 16)
+Last updated: 2026-03-08 (session 17)
 
 ## What This Is
 
@@ -227,6 +227,11 @@ Prioritized by impact:
 6. **Timezone handling** — Don't append timezones. The current naive-local-time approach is correct for a personal GTD app where you're always viewing your own tasks on your own machine. Adding timezone awareness (parsing, display, DST) adds significant complexity with minimal benefit. If syncing across timezones is ever needed, it should be a dedicated feature.
 
 7. **Invalid datetime validation** — The date picker prevents most invalid dates. Text input for dates (in task detail view) could get validation, but it's low priority. The date picker is the primary input mechanism.
+
+8. **Single Actions as a View (model simplification exploration)** — Explore treating Single Actions / Next Actions as a first-class saved view conceptually, rather than a distinct primary tab/list in UX language.
+   - **Phase 1 (low-risk):** keep current storage model, but experiment with navigation and labeling so Single Actions behaves like a built-in view.
+   - **Phase 2 (optional refactor):** evaluate collapsing list-specific assumptions into a more view-centric task model if Phase 1 validates the UX.
+   - **Goal:** reduce mental overhead by making filters/views the primary interaction model without regressing inbox processing and refile workflows.
 
 ### Power Features (prioritized)
 
