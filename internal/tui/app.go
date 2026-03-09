@@ -67,6 +67,15 @@ const (
 	prefixTime
 )
 
+type appTab string
+
+const (
+	tabInbox    appTab = "inbox"
+	tabActions  appTab = "actions"
+	tabProjects appTab = "projects"
+	tabViews    appTab = "views"
+)
+
 // projEditField enumerates the editable fields in the project edit view.
 type projEditField int
 
@@ -193,6 +202,7 @@ type Model struct {
 	activeViewInclA bool               // whether the active view includes archived tasks
 	viewResults     []service.ViewTask // filtered tasks for the active view
 	viewCursor      int                // cursor within view results
+	tabOrder        []appTab
 
 	// Process inbox state.
 	processItems []model.Task // snapshot of inbox tasks taken at activation
@@ -250,7 +260,8 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 		currentList:    model.ListIn,
 		input:          ti,
 		datePicker:     datepicker.New(),
-		savedViews:     model.DefaultViews(),
+		savedViews:     resolveSavedViews(cfg),
+		tabOrder:       resolveTabs(cfg),
 		keybindings:    keybindings,
 		disabledAction: disabled,
 		undoEnabled:    cfg.UI.UndoGraceEnabled,
@@ -272,6 +283,111 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 	}
 
 	return m
+}
+
+func resolveSavedViews(cfg config.Config) []model.SavedView {
+	views := make([]model.SavedView, 0, len(model.DefaultViews())+len(cfg.Views.Saved))
+	if cfg.Views.UseDefaults {
+		views = append(views, model.DefaultViews()...)
+	}
+	for _, v := range cfg.Views.Saved {
+		views = append(views, model.SavedView{
+			Name:            v.Name,
+			Query:           v.Query,
+			IncludeArchived: v.IncludeArchived,
+		})
+	}
+	if len(views) == 0 {
+		views = model.DefaultViews()
+	}
+	return views
+}
+
+func resolveTabs(cfg config.Config) []appTab {
+	if len(cfg.UI.Tabs) == 0 {
+		return []appTab{tabInbox, tabActions, tabProjects, tabViews}
+	}
+	order := make([]appTab, 0, len(cfg.UI.Tabs))
+	for _, t := range cfg.UI.Tabs {
+		switch t {
+		case string(tabInbox):
+			order = append(order, tabInbox)
+		case string(tabActions):
+			order = append(order, tabActions)
+		case string(tabProjects):
+			order = append(order, tabProjects)
+		case string(tabViews):
+			order = append(order, tabViews)
+		}
+	}
+	if len(order) == 0 {
+		return []appTab{tabInbox, tabActions, tabProjects, tabViews}
+	}
+	return order
+}
+
+func (m Model) currentTab() appTab {
+	if m.view == viewProjects || m.view == viewProjectDetail || m.view == viewProjectEdit {
+		return tabProjects
+	}
+	if m.view == viewViews || m.view == viewViewResults || m.view == viewWeeklyReview {
+		return tabViews
+	}
+	if m.view == viewList && m.currentList == model.ListSingleActions {
+		return tabActions
+	}
+	return tabInbox
+}
+
+func (m Model) activateTab(tab appTab) tea.Cmd {
+	switch tab {
+	case tabInbox:
+		m.view = viewList
+		m.currentList = model.ListIn
+		m.cursor = 0
+		return m.loadCurrentList
+	case tabActions:
+		m.view = viewList
+		m.currentList = model.ListSingleActions
+		m.cursor = 0
+		return m.loadCurrentList
+	case tabProjects:
+		m.view = viewProjects
+		m.cursor = 0
+		return m.loadProjects
+	case tabViews:
+		m.view = viewViews
+		m.viewListCursor = 0
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (m Model) handleTabHotkeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) {
+	key := msg.String()
+	if key == "tab" {
+		if len(m.tabOrder) == 0 {
+			return m, nil, false
+		}
+		cur := m.currentTab()
+		idx := 0
+		for i, t := range m.tabOrder {
+			if t == cur {
+				idx = i
+				break
+			}
+		}
+		next := m.tabOrder[(idx+1)%len(m.tabOrder)]
+		return m, m.activateTab(next), true
+	}
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		i := int(key[0] - '1')
+		if i >= 0 && i < len(m.tabOrder) {
+			return m, m.activateTab(m.tabOrder[i]), true
+		}
+	}
+	return m, nil, false
 }
 
 // Init loads the current list on startup.
@@ -646,6 +762,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == modeNormal && strings.EqualFold(msg.String(), m.undoKey) {
 			return m.applyUndo()
+		}
+		if m.mode == modeNormal && m.view != viewProcessInbox {
+			if next, cmd, ok := m.handleTabHotkeys(msg); ok {
+				return next, cmd
+			}
 		}
 
 		switch m.mode {
@@ -3382,59 +3503,52 @@ func (m Model) renderProcessTaskPreview(b *strings.Builder) {
 
 // renderTabBar renders the list switcher tabs.
 func (m Model) renderTabBar() string {
-	inboxLabel := " 1 Inbox "
-	actionsLabel := " 2 Actions "
-	projectsLabel := " 3 Projects "
-	viewsLabel := " 4 Views "
-
-	var tabs [4]string
-
-	if m.view == viewList && m.currentList == model.ListIn {
-		count := 0
-		if m.list != nil {
-			count = len(m.list.Tasks)
+	labels := make([]string, 0, len(m.tabOrder))
+	active := m.currentTab()
+	for i, tab := range m.tabOrder {
+		var label string
+		switch tab {
+		case tabInbox:
+			count := 0
+			if m.view == viewList && m.currentList == model.ListIn && m.list != nil {
+				count = len(m.list.Tasks)
+			}
+			label = fmt.Sprintf(" %d Inbox ", i+1)
+			if active == tabInbox {
+				label = fmt.Sprintf("%s(%d)", label, count)
+			}
+		case tabActions:
+			count := 0
+			if m.view == viewList && m.currentList == model.ListSingleActions && m.list != nil {
+				count = len(m.list.Tasks)
+			}
+			label = fmt.Sprintf(" %d Actions ", i+1)
+			if active == tabActions {
+				label = fmt.Sprintf("%s(%d)", label, count)
+			}
+		case tabProjects:
+			label = fmt.Sprintf(" %d Projects ", i+1)
+			if active == tabProjects {
+				label = fmt.Sprintf("%s(%d)", label, len(m.projects))
+			}
+		case tabViews:
+			label = fmt.Sprintf(" %d Views ", i+1)
 		}
-		tabs[0] = activeTabStyle.Render(fmt.Sprintf("%s(%d)", inboxLabel, count))
-	} else {
-		tabs[0] = inactiveTabStyle.Render(inboxLabel)
-	}
 
-	if m.view == viewList && m.currentList == model.ListSingleActions {
-		count := 0
-		if m.list != nil {
-			count = len(m.list.Tasks)
+		if m.view == viewProcessInbox && tab == tabInbox {
+			label = fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
+			if m.processStep == stepComplete {
+				label = " Inbox Processed! "
+			}
 		}
-		tabs[1] = activeTabStyle.Render(fmt.Sprintf("%s(%d)", actionsLabel, count))
-	} else {
-		tabs[1] = inactiveTabStyle.Render(actionsLabel)
-	}
 
-	if m.view == viewProjects || m.view == viewProjectDetail || m.view == viewProjectEdit {
-		count := len(m.projects)
-		tabs[2] = activeTabStyle.Render(fmt.Sprintf("%s(%d)", projectsLabel, count))
-	} else {
-		tabs[2] = inactiveTabStyle.Render(projectsLabel)
-	}
-
-	if m.view == viewViews || m.view == viewViewResults || m.view == viewWeeklyReview {
-		tabs[3] = activeTabStyle.Render(viewsLabel)
-	} else {
-		tabs[3] = inactiveTabStyle.Render(viewsLabel)
-	}
-
-	// In process inbox mode, highlight the inbox tab with a special label.
-	if m.view == viewProcessInbox {
-		label := fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
-		if m.processStep == stepComplete {
-			label = " Inbox Processed! "
+		if (m.view == viewProcessInbox && tab == tabInbox) || (m.view != viewProcessInbox && active == tab) {
+			labels = append(labels, activeTabStyle.Render(label))
+		} else {
+			labels = append(labels, inactiveTabStyle.Render(label))
 		}
-		tabs[0] = activeTabStyle.Render(label)
-		tabs[1] = inactiveTabStyle.Render(actionsLabel)
-		tabs[2] = inactiveTabStyle.Render(projectsLabel)
-		tabs[3] = inactiveTabStyle.Render(viewsLabel)
 	}
-
-	return tabs[0] + "  " + tabs[1] + "  " + tabs[2] + "  " + tabs[3]
+	return strings.Join(labels, "  ")
 }
 
 // helpText returns contextual help based on mode and current view.
@@ -3489,7 +3603,7 @@ func (m Model) helpText() string {
 		if m.mode == modeEditingField {
 			return "enter: run query  esc: cancel"
 		}
-		return "enter: open view  /: ad-hoc query  W: weekly review  j/k: navigate  1-4/tab: switch tab  q: quit"
+		return "enter: open view  /: ad-hoc query  W: weekly review  j/k: navigate  1..N/tab: switch tab  q: quit"
 	}
 	if m.view == viewWeeklyReview {
 		return "j/k: navigate  h/l: prev/next section  enter: open item  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
@@ -3535,7 +3649,7 @@ func (m Model) helpText() string {
 		return strings.Join(parts, "  ")
 	}
 
-	nav := "j/k: navigate  tab: switch list  q: quit"
+	nav := "j/k: navigate  tab: next tab  q: quit"
 
 	switch m.view {
 	case viewProjects:

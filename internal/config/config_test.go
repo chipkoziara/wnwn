@@ -104,3 +104,56 @@ func TestLoad_UndoGraceDefaultsAndNormalize(t *testing.T) {
 		t.Fatalf("undo_key = %q, want %q", cfg.UI.UndoKey, "u")
 	}
 }
+
+func TestLoad_TabsNormalize(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("WNWN_CONFIG_FILE", "")
+
+	configPath := filepath.Join(xdg, "wnwn", Filename)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[ui]\ntabs=[' Views ', 'inbox', 'invalid', 'views', 'projects']\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.UI.Tabs
+	if len(got) != 3 || got[0] != "views" || got[1] != "inbox" || got[2] != "projects" {
+		t.Fatalf("tabs = %#v", got)
+	}
+}
+
+func TestLoad_ViewsSavedTrimmed(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("WNWN_CONFIG_FILE", "")
+
+	configPath := filepath.Join(xdg, "wnwn", Filename)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[views]\nuse_defaults=false\n[[views.saved]]\nname='  Home  '\nquery=' tag:@home '\ninclude_archived=true\n[[views.saved]]\nname='  '\nquery='state:next-action'\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Views.UseDefaults {
+		t.Fatal("expected use_defaults=false")
+	}
+	if len(cfg.Views.Saved) != 1 {
+		t.Fatalf("saved views = %#v", cfg.Views.Saved)
+	}
+	if cfg.Views.Saved[0].Name != "Home" || cfg.Views.Saved[0].Query != "tag:@home" || !cfg.Views.Saved[0].IncludeArchived {
+		t.Fatalf("saved view = %#v", cfg.Views.Saved[0])
+	}
+}

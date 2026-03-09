@@ -16,6 +16,7 @@ const envConfigFile = "WNWN_CONFIG_FILE"
 type Config struct {
 	Archive ArchiveConfig `toml:"archive"`
 	UI      UIConfig      `toml:"ui"`
+	Views   ViewsConfig   `toml:"views"`
 	Keys    KeysConfig    `toml:"keys"`
 }
 
@@ -25,10 +26,22 @@ type ArchiveConfig struct {
 }
 
 type UIConfig struct {
-	DefaultView      string `toml:"default_view"`
-	UndoGraceEnabled bool   `toml:"undo_grace_enabled"`
-	UndoGraceSeconds int    `toml:"undo_grace_seconds"`
-	UndoKey          string `toml:"undo_key"`
+	DefaultView      string   `toml:"default_view"`
+	UndoGraceEnabled bool     `toml:"undo_grace_enabled"`
+	UndoGraceSeconds int      `toml:"undo_grace_seconds"`
+	UndoKey          string   `toml:"undo_key"`
+	Tabs             []string `toml:"tabs"`
+}
+
+type ViewsConfig struct {
+	UseDefaults bool              `toml:"use_defaults"`
+	Saved       []SavedViewConfig `toml:"saved"`
+}
+
+type SavedViewConfig struct {
+	Name            string `toml:"name"`
+	Query           string `toml:"query"`
+	IncludeArchived bool   `toml:"include_archived"`
 }
 
 type KeysConfig struct {
@@ -50,7 +63,8 @@ func Default() Config {
 			AutoArchiveDone:     false,
 			AutoArchiveCanceled: false,
 		},
-		UI: UIConfig{DefaultView: "inbox", UndoGraceEnabled: true, UndoGraceSeconds: 30, UndoKey: "u"},
+		UI:    UIConfig{DefaultView: "inbox", UndoGraceEnabled: true, UndoGraceSeconds: 30, UndoKey: "u"},
+		Views: ViewsConfig{UseDefaults: true},
 		Keys: KeysConfig{
 			List:        map[string]string{},
 			Project:     map[string]string{},
@@ -124,6 +138,45 @@ func (c *Config) normalize() {
 	if c.UI.UndoKey == "" {
 		c.UI.UndoKey = "u"
 	}
+	if len(c.UI.Tabs) == 0 {
+		c.UI.Tabs = []string{"inbox", "actions", "projects", "views"}
+	} else {
+		norm := make([]string, 0, len(c.UI.Tabs))
+		seen := map[string]struct{}{}
+		for _, t := range c.UI.Tabs {
+			t = strings.TrimSpace(strings.ToLower(t))
+			if t == "" {
+				continue
+			}
+			switch t {
+			case "inbox", "actions", "projects", "views":
+			default:
+				continue
+			}
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			norm = append(norm, t)
+		}
+		if len(norm) == 0 {
+			norm = []string{"inbox", "actions", "projects", "views"}
+		}
+		c.UI.Tabs = norm
+	}
+	if !c.Views.UseDefaults && len(c.Views.Saved) == 0 {
+		c.Views.UseDefaults = true
+	}
+	filteredViews := make([]SavedViewConfig, 0, len(c.Views.Saved))
+	for _, v := range c.Views.Saved {
+		v.Name = strings.TrimSpace(v.Name)
+		v.Query = strings.TrimSpace(v.Query)
+		if v.Name == "" {
+			continue
+		}
+		filteredViews = append(filteredViews, v)
+	}
+	c.Views.Saved = filteredViews
 	if c.Keys.List == nil {
 		c.Keys.List = map[string]string{}
 	}

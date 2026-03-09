@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 17)
+Last updated: 2026-03-08 (session 18)
 
 ## What This Is
 
@@ -8,12 +8,12 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 106 tests passing)
+### Data Layer (fully working, 108 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes, including `modified_at` task metadata for recent-change tracking. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
 - **Store API extension**: Added `ListArchives()` to support full-dataset import/export between SQLite and Markdown.
-- **Config loader** (`internal/config/`): reads optional `WNWN_CONFIG_FILE`, then XDG config path, then legacy data-dir config for archive behavior flags, default startup view, configurable undo grace settings (`ui.undo_grace_enabled`, `ui.undo_grace_seconds`, `ui.undo_key`), and configurable keybindings for list/project/view-results actions.
+- **Config loader** (`internal/config/`): reads optional `WNWN_CONFIG_FILE`, then XDG config path, then legacy data-dir config for archive behavior flags, default startup view, configurable undo grace settings (`ui.undo_grace_enabled`, `ui.undo_grace_seconds`, `ui.undo_key`), configurable top-tab order (`ui.tabs`), configurable saved views (`views.use_defaults`, `[[views.saved]]`), and configurable keybindings for list/project/view-results actions.
 - **Query package** (`internal/query/`): DSL parser + matcher for cross-list filtering. Supports `field:value`, `field:<value`, `field:>value`, `has:field`, bare `@tag` shorthand, and free text. Date fields support absolute (2026-04-01) and relative (today, tomorrow, 7d) tokens, including `modified` field queries (`modified:>today`, `has:modified`). 45 tests total across parse and match.
 - **Markdown parser** (`internal/parser/`): Reads task lists and project files. Handles YAML frontmatter, fenced YAML metadata blocks, checkbox state, indented notes prose.
 - **Markdown writer** (`internal/writer/`): Serializes back to spec-compliant Markdown. Auto-quotes `@`-prefixed tags for YAML safety.
@@ -123,8 +123,9 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 **Project list view:**
 - `E`: open project edit view for the selected project (in addition to existing `enter` to open detail)
 
-**Views tab** (`4` or `V` from anywhere, or tab from Projects):
+**Views tab** (default hotkey `4` when using default tab order; otherwise use its configured tab number):
 - Lists the 8 default saved views (Next Actions, Waiting For, Someday/Maybe, Overdue, Due This Week, Recently Created, Recently Modified, Archives)
+- Saved views can now be configured in `config.toml` (`views.use_defaults` plus `[[views.saved]]` entries)
 - `Recently Modified` includes archived tasks by default; other non-archive views read active tasks only unless a view is explicitly configured to include archives
 - `enter`: open a view — collects all tasks and filters via the query DSL
 - `W`: launch guided Weekly Review mode
@@ -235,13 +236,13 @@ Prioritized by impact:
 
 ### Power Features (prioritized)
 
-9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Saved view persistence in config.toml still deferred (see item 11).
-10. **Config file** - ✅ Foundation shipped (session 8): config now supports archive auto-archive toggles, startup default view, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, saved view persistence, review reminders.
+9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
+10. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
 11. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
 12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (106 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 5 config + 2 model).
+- None currently open. All tests pass (108 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 7 config + 2 model).
 
 ---
 
