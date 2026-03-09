@@ -184,6 +184,12 @@ Keybinding action names supported:
 | `a` | Create new project |
 | `E` | Edit project metadata (title, state, tags, deadline, URL, etc.) |
 
+### Project Structuring Tips
+
+- Default to a single sub-group (for example `Tasks`) for most projects.
+- Add sub-groups only when they meaningfully reflect phases/areas you actively review (for example `Research`, `Build`, `Launch`).
+- If you rarely move tasks between sub-groups, keep projects flat and use states/tags/views for organization instead.
+
 ### Project Detail
 
 | Key | Action |

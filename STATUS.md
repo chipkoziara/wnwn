@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 23)
+Last updated: 2026-03-08 (session 24)
 
 ## What This Is
 
@@ -107,6 +107,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 
 **Project detail view:**
 - Flattened sub-group headings + tasks
+- Recommended usage: default to one sub-group for small projects; add more only when phase grouping improves review clarity
 - `e`: open task detail view for selected task
 - `o`: open selected task URL in browser
 - `a`: add task to current sub-group
