@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 21)
+Last updated: 2026-03-08 (session 22)
 
 ## What This Is
 
@@ -241,12 +241,22 @@ Prioritized by impact:
    - Future flow: on delete of non-empty sub-group, prompt for destination sub-group and move all tasks before deletion.
    - Keep current safe default for empty sub-groups as-is.
 
+10. **Task detail field ordering pass** — Revisit task edit field order and hierarchy (for example where notes should sit) to reduce friction during quick edits.
+
+11. **Keybinding ergonomics audit** — Review default keybindings across list/project/view-results flows for mnemonic consistency and reduced cognitive switching.
+
+12. **Project-grouped view rendering** — Add an optional view-results mode that groups tasks by project heading (instead of a flat mixed list), with quick jump/open behavior.
+
+13. **Configurable data directory in config.toml** — Add an optional config field for default data path so users can persist storage location without relying only on `WNWN_DATA_DIR`.
+
+14. **Go module path alignment** — Optionally align `go.mod` module path with the actual GitHub repository path for convention and discoverability.
+
 ### Power Features (prioritized)
 
-10. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
-11. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
-12. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
-13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+15. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
+16. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
+17. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
+18. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
 - None currently open. All tests pass (112 total: 8 parser + 45 query + 44 service + 3 writer/parser roundtrip + 2 sqlite store + 8 config + 2 model).
