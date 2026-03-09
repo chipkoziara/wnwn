@@ -4,6 +4,8 @@ package tui
 import (
 	"fmt"
 	"math"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -462,6 +464,7 @@ func (m Model) Init() tea.Cmd {
 var defaultKeybindings = map[string]map[string]string{
 	"list": {
 		"add":            "a",
+		"open_url":       "o",
 		"refile_actions": "r",
 		"refile_project": "p",
 		"someday":        "m",
@@ -475,6 +478,7 @@ var defaultKeybindings = map[string]map[string]string{
 	"project": {
 		"add_task":        "a",
 		"add_subgroup":    "n",
+		"open_url":        "o",
 		"rename_subgroup": "R",
 		"delete_subgroup": "X",
 		"done":            "d",
@@ -484,14 +488,15 @@ var defaultKeybindings = map[string]map[string]string{
 		"move_subgroup":   "m",
 	},
 	"view_results": {
-		"done":    "d",
-		"cancel":  "c",
-		"someday": "m",
-		"waiting": "w",
-		"archive": "A",
-		"restore": "U",
-		"trash":   "x",
-		"refresh": "R",
+		"done":     "d",
+		"cancel":   "c",
+		"open_url": "o",
+		"someday":  "m",
+		"waiting":  "w",
+		"archive":  "A",
+		"restore":  "U",
+		"trash":    "x",
+		"refresh":  "R",
 	},
 }
 
@@ -1209,6 +1214,21 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.view = viewTaskDetail
 			return m, nil
 		}
+
+	case "o":
+		if m.actionDisabled("list", "open_url") {
+			return m, nil
+		}
+		if m.list == nil || len(m.list.Tasks) == 0 {
+			return m, nil
+		}
+		task := m.list.Tasks[m.cursor]
+		if err := openURLInBrowser(task.URL); err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", err)
+			return m, m.clearStatusAfter()
+		}
+		m.statusMsg = "Opened link"
+		return m, m.clearStatusAfter()
 
 	// Add task (inbox only).
 	case "a":
@@ -1963,6 +1983,25 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+
+	case "o":
+		if m.actionDisabled("project", "open_url") {
+			return m, nil
+		}
+		if len(flatItems) == 0 {
+			return m, nil
+		}
+		item := flatItems[m.projCursor]
+		if !item.isTask {
+			m.statusMsg = "Select a task row to open URL"
+			return m, m.clearStatusAfter()
+		}
+		if err := openURLInBrowser(item.task.URL); err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", err)
+			return m, m.clearStatusAfter()
+		}
+		m.statusMsg = "Opened link"
+		return m, m.clearStatusAfter()
 
 	case "a":
 		// Add task to the sub-group the cursor is in.
@@ -2773,6 +2812,9 @@ func (m Model) renderProjectDetailView(b *strings.Builder) {
 			if item.task.Deadline != nil {
 				meta = append(meta, deadlineStyle.Render("due:"+item.task.Deadline.Format("2006-01-02")))
 			}
+			if link := urlIndicatorMeta(item.task.URL); link != "" {
+				meta = append(meta, link)
+			}
 			if len(meta) > 0 {
 				b.WriteString("  ")
 				b.WriteString(strings.Join(meta, " "))
@@ -2882,6 +2924,9 @@ func (m Model) renderTask(idx int, task model.Task) string {
 	}
 	if task.Deadline != nil {
 		meta = append(meta, deadlineStyle.Render("due:"+task.Deadline.Format("2006-01-02")))
+	}
+	if link := urlIndicatorMeta(task.URL); link != "" {
+		meta = append(meta, link)
 	}
 	if len(task.Tags) > 0 {
 		for _, tag := range task.Tags {
@@ -3745,7 +3790,7 @@ func (m Model) helpText() string {
 		return "enter: open view  /: ad-hoc query  W: weekly review  j/k: navigate  1..N/tab: switch tab  q: quit"
 	}
 	if m.view == viewWeeklyReview {
-		return "j/k: navigate  h/l: prev/next section  enter: open item  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
+		return "j/k: navigate  h/l: prev/next section  enter: open item  o: open URL  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
 	}
 	if m.view == viewViewResults {
 		if m.pendingPrefix == prefixState {
@@ -3755,6 +3800,9 @@ func (m Model) helpText() string {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
 		parts := []string{"e: detail", "s: state-prefix", "t: time-prefix"}
+		if !m.actionDisabled("view_results", "open_url") {
+			parts = append(parts, "o: open URL")
+		}
 		quick := []string{}
 		if !m.actionDisabled("view_results", "done") {
 			quick = append(quick, "d")
@@ -3801,6 +3849,9 @@ func (m Model) helpText() string {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
 		parts := []string{"e: detail", "a: add task", "n: new sub-group", "s: state-prefix", "t: time-prefix"}
+		if !m.actionDisabled("project", "open_url") {
+			parts = append(parts, "o: open URL")
+		}
 		if !m.actionDisabled("project", "rename_subgroup") {
 			parts = append(parts, "R: rename sub-group")
 		}
@@ -3841,6 +3892,9 @@ func (m Model) helpText() string {
 		}
 		if m.currentList == model.ListIn {
 			parts := []string{"e: detail", "a: add", "P: process", "s: state-prefix", "r: route-prefix", "t: time-prefix"}
+			if !m.actionDisabled("list", "open_url") {
+				parts = append(parts, "o: open URL")
+			}
 			if !m.actionDisabled("list", "refile_project") {
 				parts = append(parts, "p: to project")
 			}
@@ -3870,6 +3924,9 @@ func (m Model) helpText() string {
 			return strings.Join(parts, "  ") + "  " + nav
 		}
 		parts := []string{"e: detail", "s: state-prefix", "r: route-prefix", "t: time-prefix"}
+		if !m.actionDisabled("list", "open_url") {
+			parts = append(parts, "o: open URL")
+		}
 		if !m.actionDisabled("list", "refile_project") {
 			parts = append(parts, "p: to project")
 		}
@@ -4433,10 +4490,24 @@ func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.weeklyReviewStep == weeklyStepProjects || m.weeklyReviewStep == weeklyStepArchived {
+		if m.weeklyReviewStep == weeklyStepProjects {
+			return m, nil
+		}
 		if m.weeklyReviewStep == weeklyStepArchived {
 			switch msg.String() {
 			case "d", "c", "s", "w", "A", "x":
 				m.statusMsg = "Archived tasks are read-only"
+				return m, m.clearStatusAfter()
+			case "o":
+				vt, ok := m.selectedWeeklyTask()
+				if !ok {
+					return m, nil
+				}
+				if err := openURLInBrowser(vt.Task.URL); err != nil {
+					m.statusMsg = fmt.Sprintf("Error: %v", err)
+					return m, m.clearStatusAfter()
+				}
+				m.statusMsg = "Opened link"
 				return m, m.clearStatusAfter()
 			}
 		}
@@ -4456,6 +4527,17 @@ func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.weeklyTaskArchive()
 	case "x":
 		return m, m.weeklyTaskTrash()
+	case "o":
+		vt, ok := m.selectedWeeklyTask()
+		if !ok {
+			return m, nil
+		}
+		if err := openURLInBrowser(vt.Task.URL); err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", err)
+			return m, m.clearStatusAfter()
+		}
+		m.statusMsg = "Opened link"
+		return m, m.clearStatusAfter()
 	}
 
 	return m, nil
@@ -4674,6 +4756,20 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.view = viewTaskDetail
 		return m, nil
+
+	case "o":
+		if m.actionDisabled("view_results", "open_url") {
+			return m, nil
+		}
+		if len(m.viewResults) == 0 {
+			return m, nil
+		}
+		if err := openURLInBrowser(m.viewResults[m.viewCursor].Task.URL); err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", err)
+			return m, m.clearStatusAfter()
+		}
+		m.statusMsg = "Opened link"
+		return m, m.clearStatusAfter()
 
 	case "R":
 		if m.actionDisabled("view_results", "refresh") {
@@ -4975,6 +5071,32 @@ func sourceBadge(source string) string {
 	return "[" + source + "]"
 }
 
+func openURLInBrowser(url string) error {
+	if strings.TrimSpace(url) == "" {
+		return fmt.Errorf("task has no URL")
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("opening URL: %w", err)
+	}
+	return nil
+}
+
+func urlIndicatorMeta(url string) string {
+	if strings.TrimSpace(url) == "" {
+		return ""
+	}
+	return tagStyle.Render("🔗")
+}
+
 func (m Model) renderWeeklyReview(b *strings.Builder) {
 	b.WriteString(projectTitleStyle.Render("Weekly Review"))
 	b.WriteString("  ")
@@ -5061,6 +5183,9 @@ func (m Model) renderWeeklyReview(b *strings.Builder) {
 		}
 		if vt.Task.ArchivedAt != nil && m.weeklyReviewStep == weeklyStepArchived {
 			meta = append(meta, helpStyle.Render("archived:"+vt.Task.ArchivedAt.Format("2006-01-02")))
+		}
+		if link := urlIndicatorMeta(vt.Task.URL); link != "" {
+			meta = append(meta, link)
 		}
 		for _, tag := range vt.Task.Tags {
 			meta = append(meta, tagStyle.Render(tag))
@@ -5167,6 +5292,9 @@ func (m Model) renderViewResults(b *strings.Builder) {
 		}
 		if task.Deadline != nil {
 			meta = append(meta, deadlineStyle.Render("due:"+task.Deadline.Format("2006-01-02")))
+		}
+		if link := urlIndicatorMeta(task.URL); link != "" {
+			meta = append(meta, link)
 		}
 		for _, tag := range task.Tags {
 			meta = append(meta, tagStyle.Render(tag))

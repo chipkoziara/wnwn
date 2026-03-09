@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 22)
+Last updated: 2026-03-08 (session 23)
 
 ## What This Is
 
@@ -60,6 +60,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Tab and 1/2/3 to switch between views
 - Status messages with auto-clear
 - `e`: open task detail view
+- `o`: open selected task URL in browser (if present)
+- Tasks with URLs render a `🔗` metadata marker before tags
 
 **Inbox view:**
 - `a`: add task inline
@@ -106,6 +108,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 **Project detail view:**
 - Flattened sub-group headings + tasks
 - `e`: open task detail view for selected task
+- `o`: open selected task URL in browser
 - `a`: add task to current sub-group
 - `n`: add new sub-group
 - `R`: rename selected sub-group heading
@@ -139,6 +142,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Guided sections: Projects Missing Next Action, Aging Waiting For (7+ days), Someday/Maybe, Recently Archived (7 days)
 - `h`/`l` or arrows: previous/next section; `j`/`k`/`g`/`G`: navigate items
 - `enter`: open project detail (projects section) or task detail (task sections)
+- `o`: open selected task URL in browser (task sections)
 - `d`/`c`/`s`/`w`, `A`, `x`: mutate active tasks in waiting/someday sections; `R` refreshes review data
 - Archived section is read-only
 
@@ -147,6 +151,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - Header shows view name and query string
 - `j`/`k`/`g`/`G`: navigate results
 - `e`: open task detail (full edit; esc/save returns to view results and refreshes)
+- `o`: open selected task URL in browser
 - `d`/`c`/`s`/`w`: state changes applied directly with source-aware routing; view refreshes automatically
 - `s` prefix + (`m`/`d`/`c`/`w`) for grouped state actions; direct quick states remain available (`m`/`d`/`c`/`w`)
 - `t` prefix + (`d`/`s`) for quick deadline/scheduled edit
