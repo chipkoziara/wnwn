@@ -841,7 +841,7 @@ func (m *Model) applyUndo() (tea.Model, tea.Cmd) {
 		return m, m.clearStatusAfter()
 	}
 	if success == "" {
-		success = "Restored item"
+		success = "Restored"
 	}
 	m.statusMsg = success
 	return m, tea.Batch(reload, m.clearStatusAfter())
@@ -868,7 +868,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					"Task marked done",
 					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
 					m.loadCurrentList,
-					fmt.Sprintf("Restored [%s]", task.Text),
+					fmt.Sprintf("Restored: %s", task.Text),
 				)
 				return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 			case "c":
@@ -880,7 +880,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					"Task canceled",
 					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
 					m.loadCurrentList,
-					fmt.Sprintf("Restored [%s]", task.Text),
+					fmt.Sprintf("Restored: %s", task.Text),
 				)
 				return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 			case "w":
@@ -1104,7 +1104,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				"Task marked done",
 				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
 				m.loadCurrentList,
-				fmt.Sprintf("Restored [%s]", task.Text),
+				fmt.Sprintf("Restored: %s", task.Text),
 			)
 			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
@@ -1124,7 +1124,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				"Task canceled",
 				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
 				m.loadCurrentList,
-				fmt.Sprintf("Restored [%s]", task.Text),
+				fmt.Sprintf("Restored: %s", task.Text),
 			)
 			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
@@ -1147,7 +1147,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					return err
 				},
 				m.loadCurrentList,
-				fmt.Sprintf("Restored [%s]", task.Text),
+				fmt.Sprintf("Restored: %s", task.Text),
 			)
 			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
@@ -1170,7 +1170,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					return err
 				},
 				m.loadCurrentList,
-				fmt.Sprintf("Restored [%s]", task.Text),
+				fmt.Sprintf("Restored: %s", task.Text),
 			)
 			return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 		}
@@ -1211,7 +1211,7 @@ func (m Model) refileTask(task model.Task, destList model.ListType, newState mod
 		undoApply := func() error {
 			return m.svc.MoveToList(destList, task.ID, fromList, task.State)
 		}
-		return taskRefiledMsg{text: task.Text, undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored [%s]", task.Text)}
+		return taskRefiledMsg{text: task.Text, undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored: %s", task.Text)}
 	}
 }
 
@@ -1676,7 +1676,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "c":
@@ -1690,7 +1690,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "w":
@@ -1824,7 +1824,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
@@ -1848,7 +1848,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
@@ -1873,7 +1873,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return err
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
@@ -1899,7 +1899,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						return err
 					},
 					m.reloadProjectDetail(),
-					fmt.Sprintf("Restored [%s]", item.task.Text),
+					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			}
@@ -2130,7 +2130,7 @@ func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
 		undoApply := func() error {
 			return m.svc.MoveTaskFromProjectToList(filename, sgIdx, taskID, fromList, oldState)
 		}
-		return taskRefiledMsg{text: fmt.Sprintf("%s -> %s", taskText, projTitle), undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored [%s]", taskText)}
+		return taskRefiledMsg{text: fmt.Sprintf("%s -> %s", taskText, projTitle), undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored: %s", taskText)}
 	}
 }
 
@@ -4566,7 +4566,7 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 			}
 			return m.svc.UpdateState(vt.ListType, vt.Task.ID, oldState)
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "State updated", undoSuccess: fmt.Sprintf("Restored [%s]", vt.Task.Text)}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "State updated", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
 	}
 }
 
@@ -4608,7 +4608,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 			_, err := m.svc.RestoreTask(vt.Task, source)
 			return err
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task trashed", undoSuccess: fmt.Sprintf("Restored [%s]", vt.Task.Text)}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task trashed", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
 	}
 }
 
@@ -4646,7 +4646,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 			_, err := m.svc.RestoreArchivedTask(vt.Task.ID)
 			return err
 		}
-		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task archived", undoSuccess: fmt.Sprintf("Restored [%s]", vt.Task.Text)}
+		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task archived", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
 	}
 }
 
