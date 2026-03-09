@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 24)
+Last updated: 2026-03-08 (session 25)
 
 ## What This Is
 
@@ -216,6 +216,9 @@ Tasks use Markdown checkboxes with indented fenced YAML metadata blocks. See `BR
 - charm.land/bubbletea/v2, charm.land/lipgloss/v2, charm.land/bubbles/v2
 - github.com/oklog/ulid/v2
 - gopkg.in/yaml.v3
+
+### Project Metadata
+- Added `LICENSE` (Apache-2.0) and `CONTRIBUTING.md` with DCO sign-off guidance (`git commit -s`).
 
 ## What's NOT Built Yet
 

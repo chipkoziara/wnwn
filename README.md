@@ -131,9 +131,9 @@ view_results = ["done", "cancel", "waiting", "someday"]
 
 Keybinding action names supported:
 
-- `keys.list`: `add`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `cancel`, `archive`, `trash`, `process`
-- `keys.project`: `add_task`, `add_subgroup`, `done`, `cancel`, `archive`, `trash`, `move_subgroup`
-- `keys.view_results`: `done`, `cancel`, `someday`, `waiting`, `archive`, `trash`, `refresh`
+- `keys.list`: `add`, `open_url`, `refile_actions`, `refile_project`, `someday`, `waiting`, `done`, `cancel`, `archive`, `trash`, `process`
+- `keys.project`: `add_task`, `add_subgroup`, `open_url`, `rename_subgroup`, `delete_subgroup`, `done`, `cancel`, `archive`, `trash`, `move_subgroup`
+- `keys.view_results`: `done`, `cancel`, `open_url`, `someday`, `waiting`, `archive`, `restore`, `trash`, `refresh`
 - `keys.disable`: action names to disable as direct one-key shortcuts (per scope)
 
 ## Keyboard Shortcuts
@@ -301,6 +301,14 @@ WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```
 
 The data layer has 31 passing tests covering the parser, writer, and service layer.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See `LICENSE`.
+
+## Contributing
+
+Contributions are welcome. See `CONTRIBUTING.md` for setup and DCO sign-off requirements.
 
 ## Roadmap
 
