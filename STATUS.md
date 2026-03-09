@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 19)
+Last updated: 2026-03-08 (session 20)
 
 ## What This Is
 
@@ -8,7 +8,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 
 ## What's Built
 
-### Data Layer (fully working, 109 tests passing)
+### Data Layer (fully working, 112 tests passing)
 - **Data model** (`internal/model/`): Task, TaskList, Project, SubGroup, SavedView types with full GTD attributes, including `modified_at` task metadata for recent-change tracking. Task states: empty, next-action, waiting-for, some-day/maybe, done, canceled. Project states: active, waiting-for, some-day/maybe, done, canceled (`StateActive` is project-only; `StateNextAction` is task-only).
 - **SQLite persistence (canonical runtime backend)** (`internal/store/`): `Store` uses SQLite for all runtime reads/writes. Schema covers lists, list tasks, projects, sub-groups, project tasks, and archived tasks, with ordered-position columns for deterministic rendering.
 - **Markdown interchange backend** (`internal/store/markdown.go`): Markdown read/write remains first-class for `import-md` / `export-md` workflows, but is no longer a runtime-selectable backend.
@@ -26,7 +26,7 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
   - Restore from archive: `RestoreArchivedTask` returns archived tasks to their recorded source (inbox, single-actions, or project), with inbox fallback when source is unavailable.
   - Trash semantics: trashed tasks are permanently deleted and are not archived.
   - List operations: move between inbox/single-actions, refile to projects
-  - Project operations: create, add sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
+  - Project operations: create, add/rename/delete sub-groups, add tasks, reorder tasks within sub-groups, move tasks between sub-groups
 	- Archiving: archived task records include source tracking and `archived_at` timestamp
 	  - **Full task mutation**: `UpdateTask` (list tasks) and `UpdateProjectTask` (project tasks) replace all mutable fields and auto-set waiting_since when entering waiting-for
 	  - **Cross-list aggregation**: `CollectAllTasks()` reads inbox, single-actions, and all project sub-groups, returning `[]ViewTask` with source provenance for each task
@@ -108,6 +108,8 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
 - `e`: open task detail view for selected task
 - `a`: add task to current sub-group
 - `n`: add new sub-group
+- `R`: rename selected sub-group heading
+- `X`: delete selected sub-group heading (empty sub-groups only)
 - `s` prefix + (`m`/`d`/`c`/`w`): grouped state actions
 - `t` prefix + (`d`/`s`): deadline/scheduled quick edit
 - `d`: mark task done
@@ -242,7 +244,7 @@ Prioritized by impact:
 12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
-- None currently open. All tests pass (109 total: 8 parser + 45 query + 41 service + 3 writer/parser roundtrip + 2 sqlite store + 8 config + 2 model).
+- None currently open. All tests pass (112 total: 8 parser + 45 query + 44 service + 3 writer/parser roundtrip + 2 sqlite store + 8 config + 2 model).
 
 ---
 

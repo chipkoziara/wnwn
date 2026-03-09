@@ -26,6 +26,7 @@ const (
 	modeAdding
 	modeAddingProject     // creating a new project
 	modeAddingSubGroup    // adding a sub-group to current project
+	modeRenamingSubGroup  // renaming a sub-group in current project
 	modeAddingProjectTask // adding a task to current project sub-group
 	modePickingProject    // picking a project for refile
 	modePickingSubGroup   // picking a sub-group to move a task into
@@ -181,6 +182,7 @@ type Model struct {
 	moveTaskID    string
 	moveTaskText  string
 	moveFromSgIdx int
+	renameSgIdx   int
 
 	// Task detail / edit state.
 	detailTask      model.Task     // a working copy of the task being viewed/edited
@@ -471,13 +473,15 @@ var defaultKeybindings = map[string]map[string]string{
 		"process":        "P",
 	},
 	"project": {
-		"add_task":      "a",
-		"add_subgroup":  "n",
-		"done":          "d",
-		"cancel":        "c",
-		"archive":       "A",
-		"trash":         "x",
-		"move_subgroup": "m",
+		"add_task":        "a",
+		"add_subgroup":    "n",
+		"rename_subgroup": "R",
+		"delete_subgroup": "X",
+		"done":            "d",
+		"cancel":          "c",
+		"archive":         "A",
+		"trash":           "x",
+		"move_subgroup":   "m",
 	},
 	"view_results": {
 		"done":    "d",
@@ -832,6 +836,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateAddingProject(msg)
 		case modeAddingSubGroup:
 			return m.updateAddingSubGroup(msg)
+		case modeRenamingSubGroup:
+			return m.updateRenamingSubGroup(msg)
 		case modeAddingProjectTask:
 			return m.updateAddingProjectTask(msg)
 		case modePickingProject:
@@ -867,7 +873,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Pass through to text input in input modes.
-	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask || m.mode == modeEditingField {
+	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeRenamingSubGroup || m.mode == modeAddingProjectTask || m.mode == modeEditingField {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		return m, cmd
@@ -1977,6 +1983,45 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.input.Focus()
 		return m, cmd
 
+	case "R":
+		if m.actionDisabled("project", "rename_subgroup") {
+			return m, nil
+		}
+		if len(flatItems) == 0 {
+			return m, nil
+		}
+		item := flatItems[m.projCursor]
+		if item.isTask {
+			m.statusMsg = "Select a sub-group heading to rename"
+			return m, m.clearStatusAfter()
+		}
+		m.mode = modeRenamingSubGroup
+		m.renameSgIdx = item.sgIdx
+		m.input.Reset()
+		m.input.Placeholder = "Sub-group name"
+		m.input.SetValue(item.sgTitle)
+		cmd := m.input.Focus()
+		return m, cmd
+
+	case "X":
+		if m.actionDisabled("project", "delete_subgroup") {
+			return m, nil
+		}
+		if len(flatItems) == 0 {
+			return m, nil
+		}
+		item := flatItems[m.projCursor]
+		if item.isTask {
+			m.statusMsg = "Select a sub-group heading to delete"
+			return m, m.clearStatusAfter()
+		}
+		if err := m.svc.DeleteSubGroup(m.activeFilename, item.sgIdx); err != nil {
+			m.statusMsg = fmt.Sprintf("Error: %v", err)
+			return m, m.clearStatusAfter()
+		}
+		m.statusMsg = fmt.Sprintf("Deleted sub-group: %s", item.sgTitle)
+		return m, tea.Batch(m.reloadProjectDetail(), m.clearStatusAfter())
+
 	case "s":
 		return m, m.beginPrefix(prefixState)
 
@@ -2368,6 +2413,34 @@ func (m Model) updateAddingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// updateRenamingSubGroup handles input when renaming a sub-group.
+func (m Model) updateRenamingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		title := strings.TrimSpace(m.input.Value())
+		if title == "" {
+			m.mode = modeNormal
+			return m, nil
+		}
+		sgIdx := m.renameSgIdx
+		m.mode = modeNormal
+		return m, func() tea.Msg {
+			if err := m.svc.RenameSubGroup(m.activeFilename, sgIdx, title); err != nil {
+				return errMsg{err}
+			}
+			return taskRefiledMsg{text: fmt.Sprintf("Renamed sub-group: %s", title)}
+		}
+
+	case "esc":
+		m.mode = modeNormal
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
 // updateAddingProjectTask handles input when adding a task to a project.
 func (m Model) updateAddingProjectTask(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -2512,7 +2585,7 @@ func (m Model) View() tea.View {
 	}
 
 	// Input area (for various input modes).
-	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask {
+	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeRenamingSubGroup || m.mode == modeAddingProjectTask {
 		b.WriteString("\n")
 		var prompt string
 		switch m.mode {
@@ -2522,6 +2595,8 @@ func (m Model) View() tea.View {
 			prompt = "  New project: "
 		case modeAddingSubGroup:
 			prompt = "  New sub-group: "
+		case modeRenamingSubGroup:
+			prompt = "  Rename sub-group: "
 		case modeAddingProjectTask:
 			prompt = "  New task: "
 		}
@@ -3617,7 +3692,7 @@ func (m Model) renderTabBar() string {
 
 // helpText returns contextual help based on mode and current view.
 func (m Model) helpText() string {
-	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeAddingProjectTask {
+	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeRenamingSubGroup || m.mode == modeAddingProjectTask {
 		return "enter: save  esc: cancel"
 	}
 	if m.mode == modePickingProject || m.mode == modePickingSubGroup {
@@ -3726,6 +3801,12 @@ func (m Model) helpText() string {
 			return "time -> d: deadline  s: scheduled  esc: cancel"
 		}
 		parts := []string{"e: detail", "a: add task", "n: new sub-group", "s: state-prefix", "t: time-prefix"}
+		if !m.actionDisabled("project", "rename_subgroup") {
+			parts = append(parts, "R: rename sub-group")
+		}
+		if !m.actionDisabled("project", "delete_subgroup") {
+			parts = append(parts, "X: delete sub-group")
+		}
 		quick := []string{}
 		if !m.actionDisabled("project", "done") {
 			quick = append(quick, "d")

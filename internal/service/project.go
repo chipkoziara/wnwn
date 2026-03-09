@@ -138,6 +138,38 @@ func (svc *Service) AddSubGroup(filename string, title string) (*model.SubGroup,
 	return &sg, nil
 }
 
+// RenameSubGroup updates the title of an existing project sub-group.
+func (svc *Service) RenameSubGroup(filename string, subGroupIdx int, title string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+	if title == "" {
+		return fmt.Errorf("sub-group title cannot be empty")
+	}
+	proj.SubGroups[subGroupIdx].Title = title
+	return svc.Store.WriteProject(proj)
+}
+
+// DeleteSubGroup removes a sub-group when it has no tasks.
+func (svc *Service) DeleteSubGroup(filename string, subGroupIdx int) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+	if subGroupIdx < 0 || subGroupIdx >= len(proj.SubGroups) {
+		return fmt.Errorf("sub-group index %d out of range", subGroupIdx)
+	}
+	if len(proj.SubGroups[subGroupIdx].Tasks) > 0 {
+		return fmt.Errorf("sub-group %q has tasks; move tasks before deleting", proj.SubGroups[subGroupIdx].Title)
+	}
+	proj.SubGroups = append(proj.SubGroups[:subGroupIdx], proj.SubGroups[subGroupIdx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
 // AddTaskToProject adds a task to a specific sub-group within a project.
 func (svc *Service) AddTaskToProject(filename string, subGroupIdx int, text string, state model.TaskState) (*model.Task, error) {
 	proj, err := svc.Store.ReadProject(filename)

@@ -141,6 +141,72 @@ func TestAddSubGroup(t *testing.T) {
 	}
 }
 
+func TestRenameSubGroup(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.RenameSubGroup("my-project.md", 0, "Planning"); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := s.ReadProject("my-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proj.SubGroups[0].Title != "Planning" {
+		t.Fatalf("title = %q, want %q", proj.SubGroups[0].Title, "Planning")
+	}
+}
+
+func TestDeleteSubGroupEmpty(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.AddSubGroup("my-project.md", "Phase 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.DeleteSubGroup("my-project.md", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	proj, err := s.ReadProject("my-project.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proj.SubGroups) != 1 {
+		t.Fatalf("sub-groups = %d, want 1", len(proj.SubGroups))
+	}
+}
+
+func TestDeleteSubGroupWithTasksFails(t *testing.T) {
+	s := setupTestStore(t)
+	svc := New(s)
+
+	_, err := svc.CreateProject("My Project", "Phase 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.AddTaskToProject("my-project.md", 0, "Keep task", model.StateNextAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := svc.DeleteSubGroup("my-project.md", 0); err == nil {
+		t.Fatal("expected error when deleting non-empty sub-group")
+	}
+}
+
 func TestMoveToProject(t *testing.T) {
 	s := setupTestStore(t)
 	svc := New(s)
