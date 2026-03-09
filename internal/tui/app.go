@@ -339,28 +339,28 @@ func (m Model) currentTab() appTab {
 	return tabInbox
 }
 
-func (m Model) activateTab(tab appTab) tea.Cmd {
+func (m Model) activateTab(tab appTab) (tea.Model, tea.Cmd) {
 	switch tab {
 	case tabInbox:
 		m.view = viewList
 		m.currentList = model.ListIn
 		m.cursor = 0
-		return m.loadCurrentList
+		return m, m.loadCurrentList
 	case tabActions:
 		m.view = viewList
 		m.currentList = model.ListSingleActions
 		m.cursor = 0
-		return m.loadCurrentList
+		return m, m.loadCurrentList
 	case tabProjects:
 		m.view = viewProjects
 		m.cursor = 0
-		return m.loadProjects
+		return m, m.loadProjects
 	case tabViews:
 		m.view = viewViews
 		m.viewListCursor = 0
-		return nil
+		return m, nil
 	default:
-		return nil
+		return m, nil
 	}
 }
 
@@ -379,12 +379,14 @@ func (m Model) handleTabHotkeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) 
 			}
 		}
 		next := m.tabOrder[(idx+1)%len(m.tabOrder)]
-		return m, m.activateTab(next), true
+		modelNext, cmd := m.activateTab(next)
+		return modelNext, cmd, true
 	}
 	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
 		i := int(key[0] - '1')
 		if i >= 0 && i < len(m.tabOrder) {
-			return m, m.activateTab(m.tabOrder[i]), true
+			modelNext, cmd := m.activateTab(m.tabOrder[i])
+			return modelNext, cmd, true
 		}
 	}
 	return m, nil, false
