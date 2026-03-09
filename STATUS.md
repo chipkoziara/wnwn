@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 15)
+Last updated: 2026-03-08 (session 16)
 
 ## What This Is
 
@@ -178,7 +178,7 @@ Three-tab interface (Inbox, Actions, Projects) plus Process Inbox mode, with the
   - **All other fields**: opens inline text input; `enter` confirms, `esc` cancels
 - `s`: save all changes and return to previous view
 - `esc`: discard changes and return to previous view
-- Read-only section shows: created date, waiting_since (if set), ID, source (if archived)
+- Read-only section shows: created date, modified date (if tracked), waiting_since (if set), ID, source (if archived)
 
 **Date picker** (`internal/tui/datepicker/`):
 - Custom-built calendar component (no compatible third-party library exists for Bubbletea v2)

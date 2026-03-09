@@ -2773,6 +2773,17 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 	b.WriteString(stateStyle.Render(m.detailTask.Created.Format("2006-01-02 15:04")))
 	b.WriteString("\n")
 
+	// Modified (when tracked).
+	b.WriteString("   ")
+	b.WriteString(stateStyle.Render(fmt.Sprintf("%-14s", "Modified:")))
+	b.WriteString(" ")
+	if m.detailTask.ModifiedAt != nil {
+		b.WriteString(stateStyle.Render(m.detailTask.ModifiedAt.Format("2006-01-02 15:04")))
+	} else {
+		b.WriteString(helpStyle.Render("—"))
+	}
+	b.WriteString("\n")
+
 	// Waiting since (only when relevant).
 	if m.detailTask.WaitingSince != nil {
 		b.WriteString("   ")
