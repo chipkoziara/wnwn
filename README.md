@@ -51,9 +51,13 @@ wnwn
 wnwn add "Buy milk"
 wnwn add "Book flights" --deadline 2026-03-15 --tag travel --tag "@computer" --url https://flights.example.com
 wnwn add "Write report" --scheduled 2026-03-10 --notes "Focus on Q1 numbers"
+
+# URL capture examples (Chrome/Slack/etc.)
+wnwn add "Review Slack thread" --url "https://app.slack.com/client/T123/C456/thread/C456-1710000000.000100"
+wnwn add "Watch talk from Chrome tab" --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --tag "@watch"
 ```
 
-Tasks added via CLI land in your inbox for later processing.
+Tasks added via CLI land in your inbox for later processing and are written to your default wnwn data store (unless you override with `WNWN_DATA_DIR`).
 
 ### Markdown import/export
 
