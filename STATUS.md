@@ -1,6 +1,6 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 20)
+Last updated: 2026-03-08 (session 21)
 
 ## What This Is
 
@@ -236,12 +236,17 @@ Prioritized by impact:
    - **Phase 2 (optional refactor):** evaluate collapsing list-specific assumptions into a more view-centric task model if Phase 1 validates the UX.
    - **Goal:** reduce mental overhead by making filters/views the primary interaction model without regressing inbox processing and refile workflows.
 
+9. **Force-delete sub-group workflow** — Add an assisted delete flow for non-empty sub-groups in project detail.
+   - Current behavior blocks deleting non-empty sub-groups and requires manual task moves.
+   - Future flow: on delete of non-empty sub-group, prompt for destination sub-group and move all tasks before deletion.
+   - Keep current safe default for empty sub-groups as-is.
+
 ### Power Features (prioritized)
 
-9. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
-10. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
-11. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
-12. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+10. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
+11. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
+12. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
+13. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
 - None currently open. All tests pass (112 total: 8 parser + 45 query + 44 service + 3 writer/parser roundtrip + 2 sqlite store + 8 config + 2 model).
