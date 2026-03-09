@@ -67,14 +67,20 @@ const (
 	prefixTime
 )
 
-type appTab string
+type appTabKind int
 
 const (
-	tabInbox    appTab = "inbox"
-	tabActions  appTab = "actions"
-	tabProjects appTab = "projects"
-	tabViews    appTab = "views"
+	tabInbox appTabKind = iota
+	tabActions
+	tabProjects
+	tabViews
+	tabSavedView
 )
+
+type appTab struct {
+	Kind appTabKind
+	View model.SavedView
+}
 
 // projEditField enumerates the editable fields in the project edit view.
 type projEditField int
@@ -261,13 +267,13 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 		input:          ti,
 		datePicker:     datepicker.New(),
 		savedViews:     resolveSavedViews(cfg),
-		tabOrder:       resolveTabs(cfg),
 		keybindings:    keybindings,
 		disabledAction: disabled,
 		undoEnabled:    cfg.UI.UndoGraceEnabled,
 		undoDuration:   time.Duration(cfg.UI.UndoGraceSeconds) * time.Second,
 		undoKey:        cfg.UI.UndoKey,
 	}
+	m.tabOrder = resolveTabs(cfg, m.savedViews)
 
 	switch strings.ToLower(cfg.UI.DefaultView) {
 	case "actions", "single-actions":
@@ -303,44 +309,96 @@ func resolveSavedViews(cfg config.Config) []model.SavedView {
 	return views
 }
 
-func resolveTabs(cfg config.Config) []appTab {
+func resolveTabs(cfg config.Config, savedViews []model.SavedView) []appTab {
 	if len(cfg.UI.Tabs) == 0 {
-		return []appTab{tabInbox, tabActions, tabProjects, tabViews}
+		return []appTab{{Kind: tabInbox}, {Kind: tabActions}, {Kind: tabProjects}, {Kind: tabViews}}
 	}
 	order := make([]appTab, 0, len(cfg.UI.Tabs))
 	for _, t := range cfg.UI.Tabs {
 		switch t {
-		case string(tabInbox):
-			order = append(order, tabInbox)
-		case string(tabActions):
-			order = append(order, tabActions)
-		case string(tabProjects):
-			order = append(order, tabProjects)
-		case string(tabViews):
-			order = append(order, tabViews)
+		case "inbox":
+			order = append(order, appTab{Kind: tabInbox})
+		case "actions":
+			order = append(order, appTab{Kind: tabActions})
+		case "projects":
+			order = append(order, appTab{Kind: tabProjects})
+		case "views":
+			order = append(order, appTab{Kind: tabViews})
+		default:
+			if strings.HasPrefix(strings.ToLower(t), "view:") {
+				parts := strings.SplitN(t, ":", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				name := strings.TrimSpace(parts[1])
+				if name == "" {
+					continue
+				}
+				if sv, ok := findSavedViewByName(savedViews, name); ok {
+					order = append(order, appTab{Kind: tabSavedView, View: sv})
+				}
+			}
 		}
 	}
 	if len(order) == 0 {
-		return []appTab{tabInbox, tabActions, tabProjects, tabViews}
+		return []appTab{{Kind: tabInbox}, {Kind: tabActions}, {Kind: tabProjects}, {Kind: tabViews}}
 	}
 	return order
 }
 
-func (m Model) currentTab() appTab {
-	if m.view == viewProjects || m.view == viewProjectDetail || m.view == viewProjectEdit {
-		return tabProjects
+func findSavedViewByName(savedViews []model.SavedView, name string) (model.SavedView, bool) {
+	for _, sv := range savedViews {
+		if strings.EqualFold(sv.Name, name) {
+			return sv, true
+		}
 	}
-	if m.view == viewViews || m.view == viewViewResults || m.view == viewWeeklyReview {
-		return tabViews
+	return model.SavedView{}, false
+}
+
+func (m Model) activeTabIndex() int {
+	for i, tab := range m.tabOrder {
+		if m.isTabActive(tab) {
+			return i
+		}
 	}
-	if m.view == viewList && m.currentList == model.ListSingleActions {
-		return tabActions
+	return 0
+}
+
+func (m Model) isTabActive(tab appTab) bool {
+	switch tab.Kind {
+	case tabInbox:
+		return (m.view == viewList && m.currentList == model.ListIn) || m.view == viewProcessInbox
+	case tabActions:
+		return m.view == viewList && m.currentList == model.ListSingleActions
+	case tabProjects:
+		return m.view == viewProjects || m.view == viewProjectDetail || m.view == viewProjectEdit
+	case tabViews:
+		if !(m.view == viewViews || m.view == viewWeeklyReview || m.view == viewViewResults) {
+			return false
+		}
+		if m.view == viewViewResults {
+			for _, t := range m.tabOrder {
+				if t.Kind == tabSavedView && strings.EqualFold(t.View.Name, m.activeViewName) {
+					return false
+				}
+			}
+		}
+		return true
+	case tabSavedView:
+		if m.view == viewViewResults {
+			return strings.EqualFold(m.activeViewName, tab.View.Name)
+		}
+		if m.view == viewTaskDetail && m.detailFromView == viewViewResults {
+			return strings.EqualFold(m.activeViewName, tab.View.Name)
+		}
+		return false
+	default:
+		return false
 	}
-	return tabInbox
 }
 
 func (m Model) activateTab(tab appTab) (tea.Model, tea.Cmd) {
-	switch tab {
+	switch tab.Kind {
 	case tabInbox:
 		m.view = viewList
 		m.currentList = model.ListIn
@@ -359,6 +417,9 @@ func (m Model) activateTab(tab appTab) (tea.Model, tea.Cmd) {
 		m.view = viewViews
 		m.viewListCursor = 0
 		return m, nil
+	case tabSavedView:
+		m.view = viewViewResults
+		return m, m.runQuery(tab.View.Name, tab.View.Query, tab.View.IncludeArchived)
 	default:
 		return m, nil
 	}
@@ -370,14 +431,7 @@ func (m Model) handleTabHotkeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd, bool) 
 		if len(m.tabOrder) == 0 {
 			return m, nil, false
 		}
-		cur := m.currentTab()
-		idx := 0
-		for i, t := range m.tabOrder {
-			if t == cur {
-				idx = i
-				break
-			}
-		}
+		idx := m.activeTabIndex()
 		next := m.tabOrder[(idx+1)%len(m.tabOrder)]
 		modelNext, cmd := m.activateTab(next)
 		return modelNext, cmd, true
@@ -3513,17 +3567,16 @@ func (m Model) renderProcessTaskPreview(b *strings.Builder) {
 // renderTabBar renders the list switcher tabs.
 func (m Model) renderTabBar() string {
 	labels := make([]string, 0, len(m.tabOrder))
-	active := m.currentTab()
 	for i, tab := range m.tabOrder {
 		var label string
-		switch tab {
+		switch tab.Kind {
 		case tabInbox:
 			count := 0
 			if m.view == viewList && m.currentList == model.ListIn && m.list != nil {
 				count = len(m.list.Tasks)
 			}
 			label = fmt.Sprintf(" %d Inbox ", i+1)
-			if active == tabInbox {
+			if m.isTabActive(tab) {
 				label = fmt.Sprintf("%s(%d)", label, count)
 			}
 		case tabActions:
@@ -3532,26 +3585,28 @@ func (m Model) renderTabBar() string {
 				count = len(m.list.Tasks)
 			}
 			label = fmt.Sprintf(" %d Actions ", i+1)
-			if active == tabActions {
+			if m.isTabActive(tab) {
 				label = fmt.Sprintf("%s(%d)", label, count)
 			}
 		case tabProjects:
 			label = fmt.Sprintf(" %d Projects ", i+1)
-			if active == tabProjects {
+			if m.isTabActive(tab) {
 				label = fmt.Sprintf("%s(%d)", label, len(m.projects))
 			}
 		case tabViews:
 			label = fmt.Sprintf(" %d Views ", i+1)
+		case tabSavedView:
+			label = fmt.Sprintf(" %d %s ", i+1, tab.View.Name)
 		}
 
-		if m.view == viewProcessInbox && tab == tabInbox {
+		if m.view == viewProcessInbox && tab.Kind == tabInbox {
 			label = fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
 			if m.processStep == stepComplete {
 				label = " Inbox Processed! "
 			}
 		}
 
-		if (m.view == viewProcessInbox && tab == tabInbox) || (m.view != viewProcessInbox && active == tab) {
+		if (m.view == viewProcessInbox && tab.Kind == tabInbox) || (m.view != viewProcessInbox && m.isTabActive(tab)) {
 			labels = append(labels, activeTabStyle.Render(label))
 		} else {
 			labels = append(labels, inactiveTabStyle.Render(label))

@@ -144,19 +144,36 @@ func (c *Config) normalize() {
 		norm := make([]string, 0, len(c.UI.Tabs))
 		seen := map[string]struct{}{}
 		for _, t := range c.UI.Tabs {
-			t = strings.TrimSpace(strings.ToLower(t))
+			t = strings.TrimSpace(t)
 			if t == "" {
 				continue
 			}
-			switch t {
+			key := ""
+			core := strings.ToLower(t)
+			switch core {
 			case "inbox", "actions", "projects", "views":
+				t = core
+				key = t
 			default:
+				if strings.HasPrefix(strings.ToLower(t), "view:") || strings.HasPrefix(strings.ToLower(t), "saved:") {
+					parts := strings.SplitN(t, ":", 2)
+					name := ""
+					if len(parts) == 2 {
+						name = strings.TrimSpace(parts[1])
+					}
+					if name == "" {
+						continue
+					}
+					t = "view:" + name
+					key = strings.ToLower(t)
+				} else {
+					continue
+				}
+			}
+			if _, ok := seen[key]; ok {
 				continue
 			}
-			if _, ok := seen[t]; ok {
-				continue
-			}
-			seen[t] = struct{}{}
+			seen[key] = struct{}{}
 			norm = append(norm, t)
 		}
 		if len(norm) == 0 {

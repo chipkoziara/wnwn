@@ -157,3 +157,30 @@ func TestLoad_ViewsSavedTrimmed(t *testing.T) {
 		t.Fatalf("saved view = %#v", cfg.Views.Saved[0])
 	}
 }
+
+func TestLoad_TabsAllowPinnedViewEntries(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv("WNWN_CONFIG_FILE", "")
+
+	configPath := filepath.Join(xdg, "wnwn", Filename)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "[ui]\ntabs=['inbox', 'saved: Home Next ', 'view:Recent Waiting', 'saved:home next']\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := cfg.UI.Tabs
+	if len(got) != 3 {
+		t.Fatalf("tabs = %#v", got)
+	}
+	if got[0] != "inbox" || got[1] != "view:Home Next" || got[2] != "view:Recent Waiting" {
+		t.Fatalf("tabs = %#v", got)
+	}
+}
