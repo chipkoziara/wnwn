@@ -3100,6 +3100,13 @@ func (m Model) updateEditingField(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		val := strings.TrimSpace(m.input.Value())
+		if m.view == viewViews {
+			m.mode = modeNormal
+			if val == "" {
+				return m, nil
+			}
+			return m, m.runQuery("Ad-hoc", val, false)
+		}
 		if m.view == viewProcessInbox {
 			// Apply the edit to the process working copy and return to enrich step.
 			m.applyProcessFieldEdit(val)
