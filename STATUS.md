@@ -232,6 +232,7 @@ Prioritized by impact:
 
 - **Text input no longer swallows `u` while undo is armed** — Bubble's textinput default suggestion-accept binding also uses `u`, which conflicted with normal typing in inline editors while the app-level undo key is configured to `u`. The TUI now clears `textinput`'s suggestion-accept binding during model initialization so literal `u` remains typable in task/detail/query editors. App-level undo remains restricted to `modeNormal`, preserving undo behavior without hijacking text entry.
 - **Scrollable list-style views** — Inbox/actions lists, project list/detail, saved views, view results, and weekly review now clamp to the visible terminal height instead of rendering past the bottom of the screen. A shared `scrollOffset` + `visibleRange()` pattern keeps the active cursor visible after navigation and window resizes, while preserving the existing cursor semantics (`m.cursor`, `m.projCursor`, `m.viewCursor`, weekly review cursors).
+- **Date field editing is now reversible and validated** — Task/project date pickers now support `del`/`backspace` to clear a deadline/scheduled value, and toggling time off with `t` confirms back to a date-only value while preserving the selected day. Manual task detail date text entry now validates input and shows a status message for invalid formats (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`) instead of silently ignoring bad values.
 
 ### Deferred (future sessions)
 

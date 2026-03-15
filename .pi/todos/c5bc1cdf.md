@@ -6,7 +6,7 @@
     "datetime",
     "task-detail"
   ],
-  "status": "open",
+  "status": "closed",
   "created_at": "2026-03-15T18:23:49.953Z"
 }
 
@@ -26,3 +26,7 @@ Add explicit validation feedback for invalid date/time text entries in task deta
 ## Dedupe note
 
 This item remains canonical for **manual text-entry validation** and is not a duplicate of the date-clearing/editing tasks.
+
+## Resolution (2026-03-15)
+
+Task detail manual date parsing now validates input with `parseDateTime` returning success/failure explicitly. Invalid text leaves edit mode active and shows a status message explaining the accepted formats (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`) instead of silently ignoring the bad value.

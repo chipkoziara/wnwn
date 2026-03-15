@@ -1135,7 +1135,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
 				initial = *m.detailTask.Scheduled
 			}
-			return m, m.datePicker.Open(initial)
+			return m, m.datePicker.OpenWithOptions(initial, true)
 		}
 	}
 	key := m.remapKey("list", raw)
@@ -1938,7 +1938,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
 				initial = *m.detailTask.Scheduled
 			}
-			return m, m.datePicker.Open(initial)
+			return m, m.datePicker.OpenWithOptions(initial, true)
 		default:
 			m.cancelPrefix()
 		}
@@ -3051,14 +3051,14 @@ func (m Model) renderTaskDetailView(b *strings.Builder) {
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
 			if isSelected && isDateField {
-				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+				b.WriteString(helpStyle.Render("  (enter: open calendar, del clears)"))
 			}
 		} else if f == fieldState {
 			b.WriteString(stateStyle.Render(value))
 		} else if isDateField {
 			b.WriteString(deadlineStyle.Render(value))
 			if isSelected {
-				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+				b.WriteString(helpStyle.Render("  (enter: open calendar, del clears)"))
 			}
 		} else if f == fieldTags {
 			b.WriteString(tagStyle.Render(value))
@@ -3131,7 +3131,7 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.datePicker, cmd = m.datePicker.Update(msg)
 
 	// Check for a result.
-	if t, hasTime, confirmed, cancelled := m.datePicker.Result(); confirmed {
+	if t, hasTime, confirmed, cancelled, cleared := m.datePicker.Result(); confirmed {
 		// When hasTime is false, strip the time component so it stores as date-only (midnight).
 		// This lets callers distinguish "user picked a date" from "user picked a datetime".
 		picked := t
@@ -3162,6 +3162,26 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeNormal
 		return m, nil
 	} else if cancelled {
+		m.mode = modeNormal
+		return m, nil
+	} else if cleared {
+		if m.view == viewProcessInbox {
+			switch m.datePickerField {
+			case fieldDeadline:
+				m.processTask.Deadline = nil
+			case fieldScheduled:
+				m.processTask.Scheduled = nil
+			}
+		} else if m.view == viewProjectEdit {
+			m.projEditProject.Deadline = nil
+		} else {
+			switch m.datePickerField {
+			case fieldDeadline:
+				m.detailTask.Deadline = nil
+			case fieldScheduled:
+				m.detailTask.Scheduled = nil
+			}
+		}
 		m.mode = modeNormal
 		return m, nil
 	}
@@ -3220,7 +3240,7 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			} else if m.detailField == fieldScheduled && m.detailTask.Scheduled != nil {
 				initial = *m.detailTask.Scheduled
 			}
-			cmd := m.datePicker.Open(initial)
+			cmd := m.datePicker.OpenWithOptions(initial, true)
 			return m, cmd
 		}
 		m.mode = modeEditingField
@@ -3302,7 +3322,11 @@ func (m Model) updateEditingField(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeNormal
 			return m, nil
 		}
+		prevStatus := m.statusMsg
 		m.applyFieldEdit(val)
+		if m.statusMsg != prevStatus {
+			return m, m.clearStatusAfter()
+		}
 		m.mode = modeNormal
 		return m, nil
 
@@ -3337,23 +3361,19 @@ func (m *Model) applyFieldEdit(val string) {
 			m.detailTask.Tags = tags
 		}
 	case fieldDeadline:
-		if val == "" {
-			m.detailTask.Deadline = nil
-		} else {
-			t := parseDateTime(val)
-			if t != nil {
-				m.detailTask.Deadline = t
-			}
+		t, ok := parseDateTime(val)
+		if !ok {
+			m.statusMsg = "Invalid date/time. Use YYYY-MM-DD or YYYY-MM-DD HH:MM"
+			return
 		}
+		m.detailTask.Deadline = t
 	case fieldScheduled:
-		if val == "" {
-			m.detailTask.Scheduled = nil
-		} else {
-			t := parseDateTime(val)
-			if t != nil {
-				m.detailTask.Scheduled = t
-			}
+		t, ok := parseDateTime(val)
+		if !ok {
+			m.statusMsg = "Invalid date/time. Use YYYY-MM-DD or YYYY-MM-DD HH:MM"
+			return
 		}
+		m.detailTask.Scheduled = t
 	case fieldURL:
 		m.detailTask.URL = val
 	case fieldWaitingOn:
@@ -3381,18 +3401,22 @@ func (m *Model) applyProcessFieldEdit(val string) {
 }
 
 // parseDateTime attempts to parse a date/time string in several common formats.
-func parseDateTime(s string) *time.Time {
+func parseDateTime(s string) (*time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, true
+	}
 	formats := []string{
 		"2006-01-02 15:04",
 		"2006-01-02T15:04",
 		"2006-01-02",
 	}
 	for _, f := range formats {
-		if t, err := time.Parse(f, s); err == nil {
-			return &t
+		if t, err := time.ParseInLocation(f, s, time.Local); err == nil {
+			return &t, true
 		}
 	}
-	return nil
+	return nil, false
 }
 
 // saveDetailTask writes the working copy back to disk and returns to the prior view.
@@ -3754,7 +3778,7 @@ func (m Model) helpText() string {
 		return "enter: select  esc: cancel  j/k: navigate"
 	}
 	if m.mode == modePickingDate {
-		return "arrows/hjkl: move day  </> or [/]: month  t: toggle time  enter: confirm  esc: cancel"
+		return "arrows/hjkl: move day  </> or [/]: month  t: toggle time  enter: confirm  del/backspace: clear  esc: cancel"
 	}
 	if m.view == viewTaskDetail {
 		if m.mode == modeEditingField {
@@ -4087,7 +4111,7 @@ func (m Model) updateProjectEdit(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.projEditProject.Deadline != nil {
 				initial = *m.projEditProject.Deadline
 			}
-			cmd := m.datePicker.Open(initial)
+			cmd := m.datePicker.OpenWithOptions(initial, true)
 			return m, cmd
 		}
 		// Text input for all other fields.
@@ -4211,14 +4235,14 @@ func (m Model) renderProjectEditView(b *strings.Builder) {
 		} else if value == "" {
 			b.WriteString(helpStyle.Render("—"))
 			if isSelected && isDateField {
-				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+				b.WriteString(helpStyle.Render("  (enter: open calendar, del clears)"))
 			}
 		} else if f == projFieldState {
 			b.WriteString(stateStyle.Render(value))
 		} else if isDateField {
 			b.WriteString(deadlineStyle.Render(value))
 			if isSelected {
-				b.WriteString(helpStyle.Render("  (enter: open calendar)"))
+				b.WriteString(helpStyle.Render("  (enter: open calendar, del clears)"))
 			}
 		} else if f == projFieldTags {
 			b.WriteString(tagStyle.Render(value))
@@ -4713,7 +4737,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if m.datePickerField == fieldScheduled && m.detailTask.Scheduled != nil {
 				initial = *m.detailTask.Scheduled
 			}
-			return m, m.datePicker.Open(initial)
+			return m, m.datePicker.OpenWithOptions(initial, true)
 		default:
 			m.cancelPrefix()
 		}

@@ -92,6 +92,7 @@ type Model struct {
 
 	// whether the time input section is visible
 	showTime bool
+	allowClear bool
 
 	// text inputs for hour and minute
 	hourInput   textinput.Model
@@ -102,6 +103,7 @@ type Model struct {
 	open      bool
 	confirmed bool
 	cancelled bool
+	cleared   bool
 	result    time.Time
 	hasTime   bool // true when the user explicitly enabled the time input
 }
@@ -159,6 +161,11 @@ func validateMinute(s string) error {
 // Open initialises the picker with an existing time (or time.Time{} to default
 // to today) and marks it open.
 func (m *Model) Open(initial time.Time) tea.Cmd {
+	return m.OpenWithOptions(initial, false)
+}
+
+// OpenWithOptions initialises the picker and allows optional behaviors such as clearing.
+func (m *Model) OpenWithOptions(initial time.Time, allowClear bool) tea.Cmd {
 	base := initial
 	if base.IsZero() {
 		base = time.Now()
@@ -167,12 +174,14 @@ func (m *Model) Open(initial time.Time) tea.Cmd {
 	m.year = base.Year()
 	m.month = base.Month()
 	m.selectedDay = base.Day()
+	m.allowClear = allowClear
 
 	hasExistingTime := !initial.IsZero() && (initial.Hour() != 0 || initial.Minute() != 0)
 	m.showTime = hasExistingTime
 	m.hasTime = false // reset; will be set true only if user explicitly toggles or confirms with time
 	m.confirmed = false
 	m.cancelled = false
+	m.cleared = false
 	m.open = true
 
 	m.hourInput.Reset()
@@ -191,20 +200,24 @@ func (m *Model) Open(initial time.Time) tea.Cmd {
 func (m Model) IsOpen() bool { return m.open }
 
 // Result returns the picker outcome after an Update cycle:
-//   - (t, hasTime, true,  false) — confirmed; hasTime is true if the user explicitly set a time
-//   - (_, false,   false, true)  — cancelled
-//   - (_, false,   false, false) — still open, no decision yet
+//   - (t, hasTime, true,  false, false) — confirmed; hasTime is true if the user explicitly set a time
+//   - (_, false,   false, true,  false) — cancelled
+//   - (_, false,   false, false, true)  — cleared
+//   - (_, false,   false, false, false) — still open, no decision yet
 //
 // When hasTime is false the returned time has hour=0, minute=0. Callers should
 // use hasTime to decide whether to display/store a date-only value or a full datetime.
-func (m Model) Result() (time.Time, bool, bool, bool) {
+func (m Model) Result() (time.Time, bool, bool, bool, bool) {
 	if m.confirmed {
-		return m.result, m.hasTime, true, false
+		return m.result, m.hasTime, true, false, false
 	}
 	if m.cancelled {
-		return time.Time{}, false, false, true
+		return time.Time{}, false, false, true, false
 	}
-	return time.Time{}, false, false, false
+	if m.cleared {
+		return time.Time{}, false, false, false, true
+	}
+	return time.Time{}, false, false, false, false
 }
 
 // ── Update ───────────────────────────────────────────────────────────────────
@@ -290,6 +303,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	case "esc":
 		m.open = false
 		m.cancelled = true
+
+	case "backspace", "delete":
+		if m.allowClear {
+			m.open = false
+			m.cleared = true
+			return m, nil
+		}
 
 	case "enter":
 		return m.confirm()
@@ -495,7 +515,11 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	b.WriteString("\n  ")
-	b.WriteString(timeToggleStyle.Render("arrows/hjkl: move  </> month  enter: confirm  esc: cancel"))
+	help := "arrows/hjkl: move  </> month  enter: confirm  esc: cancel"
+	if m.allowClear {
+		help += "  del/backspace: clear"
+	}
+	b.WriteString(timeToggleStyle.Render(help))
 	b.WriteString("\n")
 
 	return b.String()
