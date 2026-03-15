@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
@@ -262,6 +263,7 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 	ti.Placeholder = "What needs to be done?"
 	ti.CharLimit = 256
 	ti.SetWidth(60)
+	ti.KeyMap.AcceptSuggestion = key.NewBinding()
 
 	keybindings, disabled := mergeKeybindings(cfg)
 	m := Model{
