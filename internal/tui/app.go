@@ -644,6 +644,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.clampCursor()
 		return m, nil
 
 	case listLoadedMsg:
@@ -5139,8 +5140,11 @@ func (m Model) renderWeeklyReview(b *strings.Builder) {
 			b.WriteString("\n")
 			return
 		}
-		for i, p := range m.weeklyReviewData.ProjectsWithoutNextAction {
-			if i == m.weeklyReviewCursors[weeklyStepProjects] {
+		cursor := m.weeklyReviewCursors[weeklyStepProjects]
+		start, end := m.visibleRange(len(m.weeklyReviewData.ProjectsWithoutNextAction), cursor)
+		for i := start; i < end; i++ {
+			p := m.weeklyReviewData.ProjectsWithoutNextAction[i]
+			if i == cursor {
 				b.WriteString(cursorStyle.Render(" > "))
 				b.WriteString(selectedTaskStyle.Render(p.Title))
 			} else {
@@ -5165,8 +5169,11 @@ func (m Model) renderWeeklyReview(b *strings.Builder) {
 		return
 	}
 
-	for i, vt := range tasks {
-		isSelected := i == m.weeklyReviewCursors[m.weeklyReviewStep]
+	cursor := m.weeklyReviewCursors[m.weeklyReviewStep]
+	start, end := m.visibleRange(len(tasks), cursor)
+	for i := start; i < end; i++ {
+		vt := tasks[i]
+		isSelected := i == cursor
 		if isSelected {
 			b.WriteString(cursorStyle.Render(" > "))
 		} else {
@@ -5219,7 +5226,9 @@ func (m Model) renderViewList(b *strings.Builder) {
 		return
 	}
 
-	for i, sv := range m.savedViews {
+	start, end := m.visibleRange(len(m.savedViews), m.viewListCursor)
+	for i := start; i < end; i++ {
+		sv := m.savedViews[i]
 		isSelected := i == m.viewListCursor
 
 		if isSelected {
@@ -5322,6 +5331,65 @@ func (m Model) renderViewResults(b *strings.Builder) {
 }
 
 // clampCursor ensures the cursor is within bounds for the current view.
+func (m Model) contentHeight() int {
+	h := m.height - 8 // tab bar, status/help, and spacing
+	if m.statusMsg != "" {
+		h--
+	}
+	if m.mode == modeAdding || m.mode == modeAddingProject || m.mode == modeAddingSubGroup || m.mode == modeRenamingSubGroup || m.mode == modeAddingProjectTask {
+		h -= 2
+	}
+	if h < 3 {
+		return 3
+	}
+	return h
+}
+
+func (m *Model) ensureScroll(cursor, total int) {
+	if total <= 0 {
+		m.scrollOffset = 0
+		return
+	}
+	visible := m.contentHeight()
+	if visible >= total {
+		m.scrollOffset = 0
+		return
+	}
+	if cursor < m.scrollOffset {
+		m.scrollOffset = cursor
+	}
+	if cursor >= m.scrollOffset+visible {
+		m.scrollOffset = cursor - visible + 1
+	}
+	maxOffset := total - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
+func (m *Model) visibleRange(total, cursor int) (int, int) {
+	m.ensureScroll(cursor, total)
+	visible := m.contentHeight()
+	start := m.scrollOffset
+	if start < 0 {
+		start = 0
+	}
+	end := start + visible
+	if end > total {
+		end = total
+	}
+	if start > end {
+		start = end
+	}
+	return start, end
+}
+
 func (m *Model) clampCursor() {
 	var max int
 	switch m.view {
@@ -5329,10 +5397,81 @@ func (m *Model) clampCursor() {
 		max = len(m.projects)
 	case viewProjectDetail:
 		max = len(m.flattenProject())
+		if max == 0 {
+			m.projCursor = 0
+			m.scrollOffset = 0
+			return
+		}
+		if m.projCursor >= max {
+			m.projCursor = max - 1
+		}
+		if m.projCursor < 0 {
+			m.projCursor = 0
+		}
+		m.ensureScroll(m.projCursor, max)
+		return
 	case viewViews:
 		max = len(m.savedViews)
+		if max == 0 {
+			m.viewListCursor = 0
+			m.scrollOffset = 0
+			return
+		}
+		if m.viewListCursor >= max {
+			m.viewListCursor = max - 1
+		}
+		if m.viewListCursor < 0 {
+			m.viewListCursor = 0
+		}
+		m.ensureScroll(m.viewListCursor, max)
+		return
 	case viewViewResults:
 		max = len(m.viewResults)
+		if max == 0 {
+			m.viewCursor = 0
+			m.scrollOffset = 0
+			return
+		}
+		if m.viewCursor >= max {
+			m.viewCursor = max - 1
+		}
+		if m.viewCursor < 0 {
+			m.viewCursor = 0
+		}
+		m.ensureScroll(m.viewCursor, max)
+		return
+	case viewWeeklyReview:
+		if m.weeklyReviewStep == weeklyStepProjects {
+			max = len(m.weeklyReviewData.ProjectsWithoutNextAction)
+			if max == 0 {
+				m.weeklyReviewCursors[weeklyStepProjects] = 0
+				m.scrollOffset = 0
+				return
+			}
+			if m.weeklyReviewCursors[weeklyStepProjects] >= max {
+				m.weeklyReviewCursors[weeklyStepProjects] = max - 1
+			}
+			if m.weeklyReviewCursors[weeklyStepProjects] < 0 {
+				m.weeklyReviewCursors[weeklyStepProjects] = 0
+			}
+			m.ensureScroll(m.weeklyReviewCursors[weeklyStepProjects], max)
+			return
+		}
+		tasks := m.weeklyTasksForStep(m.weeklyReviewStep)
+		max = len(tasks)
+		if max == 0 {
+			m.weeklyReviewCursors[m.weeklyReviewStep] = 0
+			m.scrollOffset = 0
+			return
+		}
+		if m.weeklyReviewCursors[m.weeklyReviewStep] >= max {
+			m.weeklyReviewCursors[m.weeklyReviewStep] = max - 1
+		}
+		if m.weeklyReviewCursors[m.weeklyReviewStep] < 0 {
+			m.weeklyReviewCursors[m.weeklyReviewStep] = 0
+		}
+		m.ensureScroll(m.weeklyReviewCursors[m.weeklyReviewStep], max)
+		return
 	default:
 		if m.list == nil {
 			max = 0
@@ -5343,9 +5482,14 @@ func (m *Model) clampCursor() {
 
 	if max == 0 {
 		m.cursor = 0
+		m.scrollOffset = 0
 		return
 	}
 	if m.cursor >= max {
 		m.cursor = max - 1
 	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	m.ensureScroll(m.cursor, max)
 }

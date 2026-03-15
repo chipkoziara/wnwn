@@ -231,6 +231,7 @@ Prioritized by impact:
 ### Recent Changes
 
 - **Text input no longer swallows `u` while undo is armed** — Bubble's textinput default suggestion-accept binding also uses `u`, which conflicted with normal typing in inline editors while the app-level undo key is configured to `u`. The TUI now clears `textinput`'s suggestion-accept binding during model initialization so literal `u` remains typable in task/detail/query editors. App-level undo remains restricted to `modeNormal`, preserving undo behavior without hijacking text entry.
+- **Scrollable list-style views** — Inbox/actions lists, project list/detail, saved views, view results, and weekly review now clamp to the visible terminal height instead of rendering past the bottom of the screen. A shared `scrollOffset` + `visibleRange()` pattern keeps the active cursor visible after navigation and window resizes, while preserving the existing cursor semantics (`m.cursor`, `m.projCursor`, `m.viewCursor`, weekly review cursors).
 
 ### Deferred (future sessions)
 
