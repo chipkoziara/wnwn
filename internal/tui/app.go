@@ -3250,6 +3250,18 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.input.Focus()
 		return m, cmd
 
+	case "backspace", "delete":
+		if m.detailField == fieldDeadline {
+			m.detailTask.Deadline = nil
+			m.statusMsg = "Deadline cleared"
+			return m, m.clearStatusAfter()
+		}
+		if m.detailField == fieldScheduled {
+			m.detailTask.Scheduled = nil
+			m.statusMsg = "Scheduled cleared"
+			return m, m.clearStatusAfter()
+		}
+
 	case "space":
 		// Cycle state with space too (convenient shortcut on state field).
 		if m.detailField == fieldState {
@@ -4113,6 +4125,13 @@ func (m Model) updateProjectEdit(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			cmd := m.datePicker.OpenWithOptions(initial, true)
 			return m, cmd
+		}
+
+	case "backspace", "delete":
+		if m.projEditField == projFieldDeadline {
+			m.projEditProject.Deadline = nil
+			m.statusMsg = "Deadline cleared"
+			return m, m.clearStatusAfter()
 		}
 		// Text input for all other fields.
 		m.mode = modeEditingField
