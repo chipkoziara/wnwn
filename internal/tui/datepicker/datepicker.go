@@ -514,14 +514,6 @@ func (m Model) View() string {
 	b.WriteString(confirmedStyle.Render(summary))
 	b.WriteString("\n")
 
-	b.WriteString("\n  ")
-	help := "arrows/hjkl: move  </> month  enter: confirm  esc: cancel"
-	if m.allowClear {
-		help += "  del/backspace: clear"
-	}
-	b.WriteString(timeToggleStyle.Render(help))
-	b.WriteString("\n")
-
 	return b.String()
 }
 
