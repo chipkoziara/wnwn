@@ -62,9 +62,10 @@ Tasks added via CLI land in your inbox for later processing and are written to y
 ### Query and update from the terminal
 
 ```bash
-# Query tasks using the DSL (JSON by default)
+# Query tasks/projects using the same DSL as the Views tab (JSON by default)
 wnwn query --tasks --query "deadline:today..7d"
 wnwn query --projects --query "state:active AND tag:project"
+wnwn query --tasks --query "deadline:<today OR scheduled:<today"
 
 # Update a task by stable ID
 wnwn update --task-id 01ABCDEF --state done
@@ -77,6 +78,35 @@ wnwn update --project-id 01PROJECT --deadline 2026-06-01 --clear deadline
 ```
 
 These commands are designed to be script-friendly, which makes them useful for shell automation and local agents that need to inspect or mutate GTD state without launching the TUI.
+
+### Query DSL quick reference
+
+The query DSL powers saved views, ad-hoc `/` search in the Views tab, and `wnwn query`.
+
+Examples:
+
+```text
+state:next-action
+state:waiting-for AND tag:@office
+NOT state:done
+project:launch AND (deadline:today..7d OR scheduled:today..7d)
+deadline:<today
+scheduled:today
+deadline:today..7d
+has:url
+@computer
+```
+
+Supported concepts:
+- implicit AND via spaces (`state:next-action tag:@home`)
+- explicit `AND`, `OR`, `NOT`
+- parentheses for grouping
+- date comparisons with `<`, `<=`, `>`, `>=`
+- inclusive date ranges with `start..end`
+- relative date tokens like `today`, `tomorrow`, `7d`
+- `has:field` checks
+- bare `@tag` shorthand
+- bare text matching across task text and notes
 
 ### Markdown import/export
 
@@ -233,7 +263,8 @@ Keybinding action names supported:
 |-----|--------|
 | `4` / `V` | Open Views tab |
 | `enter` | Open selected saved view |
-| `/` | Run ad-hoc query |
+| `/` | Run ad-hoc DSL query |
+| `?` | Run fuzzy search |
 | `W` | Start guided Weekly Review mode |
 
 In Weekly Review mode:
