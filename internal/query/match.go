@@ -7,17 +7,24 @@ import (
 	"github.com/wnwn/wnwn/internal/model"
 )
 
-// MatchAll reports whether a task satisfies all clauses (implicit AND).
-// source is the provenance string for the task (e.g. "in", "single-actions",
-// "projects/launch-website.md") — used by the "project" field clause.
-// An empty clause slice matches everything.
-func MatchAll(clauses []Clause, task model.Task, source string) bool {
-	for _, c := range clauses {
-		if !matchClause(c, task, source) {
-			return false
-		}
+// MatchAll reports whether a task satisfies the full query expression.
+// A nil expression matches everything.
+func MatchAll(expr Expr, task model.Task, source string) bool {
+	if expr == nil {
+		return true
 	}
-	return true
+	switch e := expr.(type) {
+	case ClauseExpr:
+		return matchClause(e.Clause, task, source)
+	case AndExpr:
+		return MatchAll(e.Left, task, source) && MatchAll(e.Right, task, source)
+	case OrExpr:
+		return MatchAll(e.Left, task, source) || MatchAll(e.Right, task, source)
+	case NotExpr:
+		return !MatchAll(e.Inner, task, source)
+	default:
+		return false
+	}
 }
 
 func matchClause(c Clause, task model.Task, source string) bool {
@@ -29,21 +36,23 @@ func matchClause(c Clause, task model.Task, source string) bool {
 	case OpEq:
 		return matchEq(c, task, source)
 	case OpLt:
-		return matchDateCmp(c, task, -1)
+		return matchDateCmp(c, task, cmpLt)
 	case OpGt:
-		return matchDateCmp(c, task, 1)
+		return matchDateCmp(c, task, cmpGt)
+	case OpLte:
+		return matchDateCmp(c, task, cmpLte)
+	case OpGte:
+		return matchDateCmp(c, task, cmpGte)
 	}
 	return false
 }
 
-// matchText does a case-insensitive substring search across Text and Notes.
 func matchText(val string, task model.Task) bool {
 	val = strings.ToLower(val)
 	return strings.Contains(strings.ToLower(task.Text), val) ||
 		strings.Contains(strings.ToLower(task.Notes), val)
 }
 
-// matchHas checks whether a field is non-empty/non-nil.
 func matchHas(field string, task model.Task) bool {
 	switch field {
 	case "deadline":
@@ -64,7 +73,6 @@ func matchHas(field string, task model.Task) bool {
 	return false
 }
 
-// matchEq handles OpEq for all field types.
 func matchEq(c Clause, task model.Task, source string) bool {
 	val := strings.ToLower(c.Value)
 	switch c.Field {
@@ -82,10 +90,8 @@ func matchEq(c Clause, task model.Task, source string) bool {
 	case "text":
 		return strings.Contains(strings.ToLower(task.Text), val)
 	case "project":
-		// Match against the source provenance string (project filename or title).
 		return strings.Contains(strings.ToLower(source), val)
 	case "deadline":
-		// OpEq on a date field means "same calendar day".
 		if task.Deadline == nil || c.Time.IsZero() {
 			return false
 		}
@@ -97,7 +103,6 @@ func matchEq(c Clause, task model.Task, source string) bool {
 		return sameDay(*task.Scheduled, c.Time)
 	case "created":
 		if c.Time.IsZero() {
-			// Non-date value: substring match on the formatted date.
 			return strings.Contains(task.Created.Format("2006-01-02"), val)
 		}
 		return sameDay(task.Created, c.Time)
@@ -113,9 +118,16 @@ func matchEq(c Clause, task model.Task, source string) bool {
 	return false
 }
 
-// matchDateCmp handles OpLt and OpGt for date fields.
-// dir is -1 for Lt (task date before clause date) and 1 for Gt (after).
-func matchDateCmp(c Clause, task model.Task, dir int) bool {
+type dateCmp int
+
+const (
+	cmpLt dateCmp = iota
+	cmpGt
+	cmpLte
+	cmpGte
+)
+
+func matchDateCmp(c Clause, task model.Task, cmp dateCmp) bool {
 	var taskDate *time.Time
 	switch c.Field {
 	case "deadline":
@@ -131,23 +143,28 @@ func matchDateCmp(c Clause, task model.Task, dir int) bool {
 	if taskDate == nil {
 		return false
 	}
-	// Normalise to midnight for day-level comparison.
 	td := dayOf(*taskDate)
 	cd := dayOf(c.Time)
-	if dir < 0 {
+	switch cmp {
+	case cmpLt:
 		return td.Before(cd)
+	case cmpGt:
+		return td.After(cd)
+	case cmpLte:
+		return td.Before(cd) || td.Equal(cd)
+	case cmpGte:
+		return td.After(cd) || td.Equal(cd)
+	default:
+		return false
 	}
-	return td.After(cd)
 }
 
-// sameDay reports whether two times fall on the same calendar day.
 func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
 	by, bm, bd := b.Date()
 	return ay == by && am == bm && ad == bd
 }
 
-// dayOf returns midnight on the day of t in t's location.
 func dayOf(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())

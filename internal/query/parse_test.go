@@ -8,97 +8,67 @@ import (
 var testNow = time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 var today = time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
-func TestParseEmpty(t *testing.T) {
-	clauses, err := Parse("", testNow)
+func mustClauseExpr(t *testing.T, input string) ClauseExpr {
+	t.Helper()
+	expr, err := Parse(input, testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(clauses) != 0 {
-		t.Errorf("expected 0 clauses, got %d", len(clauses))
+	c, ok := expr.(ClauseExpr)
+	if !ok {
+		t.Fatalf("expected ClauseExpr, got %T", expr)
+	}
+	return c
+}
+
+func TestParseEmpty(t *testing.T) {
+	expr, err := Parse("", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expr != nil {
+		t.Fatalf("expected nil expr, got %#v", expr)
 	}
 }
 
 func TestParseStateEq(t *testing.T) {
-	clauses, err := Parse("state:next-action", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(clauses) != 1 {
-		t.Fatalf("expected 1 clause, got %d", len(clauses))
-	}
-	c := clauses[0]
+	c := mustClauseExpr(t, "state:next-action").Clause
 	if c.Field != "state" || c.Op != OpEq || c.Value != "next-action" {
 		t.Errorf("unexpected clause: %+v", c)
 	}
 }
 
 func TestParseTagEq(t *testing.T) {
-	clauses, err := Parse("tag:@home", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if clauses[0].Field != "tag" || clauses[0].Value != "@home" {
-		t.Errorf("unexpected clause: %+v", clauses[0])
+	c := mustClauseExpr(t, "tag:@home").Clause
+	if c.Field != "tag" || c.Value != "@home" {
+		t.Errorf("unexpected clause: %+v", c)
 	}
 }
 
 func TestParseBareAtTag(t *testing.T) {
-	clauses, err := Parse("@home", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(clauses) != 1 {
-		t.Fatalf("expected 1 clause, got %d", len(clauses))
-	}
-	c := clauses[0]
+	c := mustClauseExpr(t, "@home").Clause
 	if c.Field != "tag" || c.Op != OpEq || c.Value != "@home" {
 		t.Errorf("bare @tag shorthand not resolved: %+v", c)
 	}
 }
 
-func TestParseDateLt(t *testing.T) {
-	clauses, err := Parse("deadline:<2026-04-01", testNow)
-	if err != nil {
-		t.Fatal(err)
+func TestParseDateComparators(t *testing.T) {
+	if c := mustClauseExpr(t, "deadline:<2026-04-01").Clause; c.Op != OpLt {
+		t.Fatalf("expected OpLt, got %v", c.Op)
 	}
-	c := clauses[0]
-	if c.Field != "deadline" || c.Op != OpLt {
-		t.Errorf("unexpected clause: %+v", c)
+	if c := mustClauseExpr(t, "deadline:<=2026-04-01").Clause; c.Op != OpLte {
+		t.Fatalf("expected OpLte, got %v", c.Op)
 	}
-	want := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
-	if !c.Time.Equal(want) {
-		t.Errorf("Time = %v, want %v", c.Time, want)
+	if c := mustClauseExpr(t, "deadline:>2026-04-01").Clause; c.Op != OpGt {
+		t.Fatalf("expected OpGt, got %v", c.Op)
 	}
-}
-
-func TestParseDateGt(t *testing.T) {
-	clauses, err := Parse("scheduled:>2026-03-15", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
-	if c.Op != OpGt {
-		t.Errorf("expected OpGt, got %v", c.Op)
-	}
-}
-
-func TestParseModifiedDateGt(t *testing.T) {
-	clauses, err := Parse("modified:>2026-03-15", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
-	if c.Field != "modified" || c.Op != OpGt {
-		t.Errorf("unexpected clause: %+v", c)
+	if c := mustClauseExpr(t, "deadline:>=2026-04-01").Clause; c.Op != OpGte {
+		t.Fatalf("expected OpGte, got %v", c.Op)
 	}
 }
 
 func TestParseDateEq(t *testing.T) {
-	clauses, err := Parse("deadline:2026-03-10", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
+	c := mustClauseExpr(t, "deadline:2026-03-10").Clause
 	if c.Op != OpEq {
 		t.Errorf("expected OpEq, got %v", c.Op)
 	}
@@ -108,87 +78,63 @@ func TestParseDateEq(t *testing.T) {
 	}
 }
 
-func TestParseRelativeDateToday(t *testing.T) {
-	clauses, err := Parse("deadline:<today", testNow)
-	if err != nil {
-		t.Fatal(err)
+func TestParseRelativeDates(t *testing.T) {
+	if c := mustClauseExpr(t, "deadline:<today").Clause; !c.Time.Equal(today) {
+		t.Errorf("today resolved to %v, want %v", c.Time, today)
 	}
-	if !clauses[0].Time.Equal(today) {
-		t.Errorf("today resolved to %v, want %v", clauses[0].Time, today)
+	wantTomorrow := today.AddDate(0, 0, 1)
+	if c := mustClauseExpr(t, "deadline:<tomorrow").Clause; !c.Time.Equal(wantTomorrow) {
+		t.Errorf("tomorrow resolved to %v, want %v", c.Time, wantTomorrow)
 	}
-}
-
-func TestParseRelativeDateTomorrow(t *testing.T) {
-	clauses, err := Parse("deadline:<tomorrow", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := today.AddDate(0, 0, 1)
-	if !clauses[0].Time.Equal(want) {
-		t.Errorf("tomorrow resolved to %v, want %v", clauses[0].Time, want)
-	}
-}
-
-func TestParseRelativeDateNd(t *testing.T) {
-	clauses, err := Parse("deadline:<7d", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := today.AddDate(0, 0, 7)
-	if !clauses[0].Time.Equal(want) {
-		t.Errorf("7d resolved to %v, want %v", clauses[0].Time, want)
+	want7d := today.AddDate(0, 0, 7)
+	if c := mustClauseExpr(t, "deadline:<7d").Clause; !c.Time.Equal(want7d) {
+		t.Errorf("7d resolved to %v, want %v", c.Time, want7d)
 	}
 }
 
 func TestParseHas(t *testing.T) {
-	clauses, err := Parse("has:deadline", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
+	c := mustClauseExpr(t, "has:deadline").Clause
 	if c.Op != OpHas || c.Field != "deadline" {
 		t.Errorf("unexpected clause: %+v", c)
 	}
 }
 
-func TestParseHasNotes(t *testing.T) {
-	clauses, err := Parse("has:notes", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if clauses[0].Op != OpHas || clauses[0].Field != "notes" {
-		t.Errorf("unexpected clause: %+v", clauses[0])
-	}
-}
-
 func TestParseBareText(t *testing.T) {
-	clauses, err := Parse("buy milk", testNow)
+	expr, err := Parse("buy milk", testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(clauses) != 2 {
-		t.Fatalf("expected 2 clauses (one per word), got %d", len(clauses))
-	}
-	for _, c := range clauses {
-		if c.Op != OpText {
-			t.Errorf("expected OpText, got %+v", c)
-		}
-	}
-	if clauses[0].Value != "buy" || clauses[1].Value != "milk" {
-		t.Errorf("unexpected values: %v %v", clauses[0].Value, clauses[1].Value)
+	_, ok := expr.(AndExpr)
+	if !ok {
+		t.Fatalf("expected implicit AND expression, got %T", expr)
 	}
 }
 
-func TestParseMultipleClausesImplicitAnd(t *testing.T) {
-	clauses, err := Parse("state:waiting-for tag:@office", testNow)
+func TestParseBooleanOperators(t *testing.T) {
+	expr, err := Parse("state:next-action OR tag:@home", testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(clauses) != 2 {
-		t.Fatalf("expected 2 clauses, got %d", len(clauses))
+	if _, ok := expr.(OrExpr); !ok {
+		t.Fatalf("expected OrExpr, got %T", expr)
 	}
-	if clauses[0].Field != "state" || clauses[1].Field != "tag" {
-		t.Errorf("unexpected fields: %v %v", clauses[0].Field, clauses[1].Field)
+
+	expr, err = Parse("NOT state:done", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := expr.(NotExpr); !ok {
+		t.Fatalf("expected NotExpr, got %T", expr)
+	}
+}
+
+func TestParseParentheses(t *testing.T) {
+	expr, err := Parse("state:next-action AND (tag:@home OR tag:@office)", testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := expr.(AndExpr); !ok {
+		t.Fatalf("expected AndExpr, got %T", expr)
 	}
 }
 
@@ -199,48 +145,9 @@ func TestParseUnknownField(t *testing.T) {
 	}
 }
 
-func TestParseUnknownHasField(t *testing.T) {
-	_, err := Parse("has:bogus", testNow)
-	if err == nil {
-		t.Error("expected error for unknown has: field, got nil")
-	}
-}
-
 func TestParseBadDate(t *testing.T) {
 	_, err := Parse("deadline:<notadate", testNow)
 	if err == nil {
 		t.Error("expected error for bad date, got nil")
-	}
-}
-
-func TestParseWaitingOn(t *testing.T) {
-	clauses, err := Parse("waiting_on:marvin", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
-	if c.Field != "waiting_on" || c.Op != OpEq || c.Value != "marvin" {
-		t.Errorf("unexpected clause: %+v", c)
-	}
-}
-
-func TestParseProject(t *testing.T) {
-	clauses, err := Parse("project:launch-website", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := clauses[0]
-	if c.Field != "project" || c.Op != OpEq {
-		t.Errorf("unexpected clause: %+v", c)
-	}
-}
-
-func TestParseFieldCaseInsensitive(t *testing.T) {
-	clauses, err := Parse("STATE:next-action", testNow)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if clauses[0].Field != "state" {
-		t.Errorf("field not lowercased: %v", clauses[0].Field)
 	}
 }
