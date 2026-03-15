@@ -59,6 +59,25 @@ wnwn add "Watch talk from Chrome tab" --url "https://www.youtube.com/watch?v=dQw
 
 Tasks added via CLI land in your inbox for later processing and are written to your default wnwn data store (unless you override with `WNWN_DATA_DIR`).
 
+### Query and update from the terminal
+
+```bash
+# Query tasks using the DSL (JSON by default)
+wnwn query --tasks --query "deadline:today..7d"
+wnwn query --projects --query "state:active AND tag:project"
+
+# Update a task by stable ID
+wnwn update --task-id 01ABCDEF --state done
+wnwn update --task-id 01ABCDEF --deadline 2026-03-20 --tags "@computer,deep-work"
+wnwn update --task-id 01ABCDEF --clear deadline,scheduled
+
+# Update a project by stable ID
+wnwn update --project-id 01PROJECT --title "Launch Website" --state active
+wnwn update --project-id 01PROJECT --deadline 2026-06-01 --clear deadline
+```
+
+These commands are designed to be script-friendly, which makes them useful for shell automation and local agents that need to inspect or mutate GTD state without launching the TUI.
+
 ### Markdown import/export
 
 ```bash

@@ -36,6 +36,11 @@ A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, 
 ### CLI (`cmd/wnwn/main.go`)
 - `wnwn` (no args): launches TUI
 - `wnwn add "task" [--deadline DATE] [--scheduled DATE] [--tag TAG]... [--url URL] [--notes TEXT]`: quick capture to inbox
+- `wnwn query [--tasks|--projects] --query DSL [--include-archived] [--json]`: script-friendly query over tasks/projects using the same DSL as Views
+- `wnwn update --task-id ID [fields...]` / `wnwn update --project-id ID [fields...]`: update task/project metadata from the terminal using stable IDs
+  - Task updates support: `--text`, `--state`, `--deadline`, `--scheduled`, `--tags`, `--url`, `--notes`, `--waiting-on`, `--clear`
+  - Project updates support: `--title`, `--state`, `--deadline`, `--tags`, `--url`, `--waiting-on`, `--clear`
+  - `--clear` accepts comma-separated field names such as `deadline,scheduled,tags,url,notes,waiting_on`
 - `wnwn export-md --out DIR`: exports SQLite data to Markdown files
 - `wnwn import-md --from DIR [--mode merge|replace] [--dry-run]`: imports Markdown files into SQLite with explicit safety modes
   - `merge` (default): non-destructive import by ID/filename; adds only missing list tasks/projects/archive tasks
