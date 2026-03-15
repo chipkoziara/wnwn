@@ -2807,7 +2807,8 @@ func (m Model) renderProjectDetailView(b *strings.Builder) {
 				b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", item.task.Text)))
 			default:
 				if isSelected {
-					b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", item.task.Text)))
+					b.WriteString(checkboxOpenStyle.Render("[ ] "))
+					b.WriteString(selectedTaskStyle.Render(item.task.Text))
 				} else {
 					b.WriteString(checkboxOpenStyle.Render("[ ] "))
 					b.WriteString(item.task.Text)
@@ -2920,7 +2921,8 @@ func (m Model) renderTask(idx int, task model.Task) string {
 		b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", task.Text)))
 	default:
 		if isSelected {
-			b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", task.Text)))
+			b.WriteString(checkboxOpenStyle.Render("[ ] "))
+			b.WriteString(selectedTaskStyle.Render(task.Text))
 		} else {
 			b.WriteString(checkboxOpenStyle.Render("[ ] "))
 			b.WriteString(task.Text)
@@ -5230,7 +5232,8 @@ func (m Model) renderWeeklyReview(b *strings.Builder) {
 			b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", vt.Task.Text)))
 		default:
 			if isSelected {
-				b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", vt.Task.Text)))
+				b.WriteString(checkboxOpenStyle.Render("[ ] "))
+				b.WriteString(selectedTaskStyle.Render(vt.Task.Text))
 			} else {
 				b.WriteString(checkboxOpenStyle.Render("[ ] "))
 				b.WriteString(taskStyle.Render(vt.Task.Text))
@@ -5341,10 +5344,11 @@ func (m Model) renderViewResults(b *strings.Builder) {
 			b.WriteString(checkboxCanceledStyle.Render(fmt.Sprintf("[-] %s", task.Text)))
 		default:
 			if isSelected {
-				b.WriteString(selectedTaskStyle.Render(fmt.Sprintf("[ ] %s", task.Text)))
+				b.WriteString(checkboxOpenStyle.Render("[ ] "))
+				b.WriteString(selectedTaskStyle.Render(task.Text))
 			} else {
 				b.WriteString(checkboxOpenStyle.Render("[ ] "))
-				b.WriteString(task.Text)
+				b.WriteString(taskStyle.Render(task.Text))
 			}
 		}
 
