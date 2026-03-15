@@ -214,6 +214,7 @@ type Model struct {
 	viewResults     []service.ViewTask // filtered tasks for the active view
 	viewCursor      int                // cursor within view results
 	tabOrder        []appTab
+	scrollOffset    int                // top row offset for scrollable list-style views
 
 	// Process inbox state.
 	processItems []model.Task // snapshot of inbox tasks taken at activation
