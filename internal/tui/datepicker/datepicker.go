@@ -484,7 +484,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	if !m.showTime {
 		b.WriteString("  ")
-		b.WriteString(timeToggleStyle.Render("t: add time"))
+		b.WriteString(timeToggleStyle.Render("t: add time (enter saves date-only)"))
 		b.WriteString("\n")
 	} else {
 		b.WriteString("  ")
@@ -493,7 +493,7 @@ func (m Model) View() string {
 		b.WriteString(labelStyle.Render(" : "))
 		b.WriteString(m.minuteInput.View())
 		b.WriteString("  ")
-		b.WriteString(timeToggleStyle.Render("(t: remove time)"))
+		b.WriteString(timeToggleStyle.Render("(t: toggle time off; enter saves date-only)"))
 		b.WriteString("\n")
 	}
 

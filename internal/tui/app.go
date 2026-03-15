@@ -3790,7 +3790,7 @@ func (m Model) helpText() string {
 		return "enter: select  esc: cancel  j/k: navigate"
 	}
 	if m.mode == modePickingDate {
-		return "arrows/hjkl: move day  </> or [/]: month  t: toggle time  enter: confirm  del/backspace: clear  esc: cancel"
+		return "arrows/hjkl: move day  </> or [/]: month  t: toggle time  enter: confirm (date-only when time hidden)  del/backspace: clear  esc: cancel"
 	}
 	if m.view == viewTaskDetail {
 		if m.mode == modeEditingField {
