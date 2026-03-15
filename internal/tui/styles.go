@@ -51,6 +51,9 @@ var (
 	deadlineStyle = lipgloss.NewStyle().
 			Foreground(colorDanger)
 
+	scheduledStyle = lipgloss.NewStyle().
+			Foreground(colorWarning)
+
 	stateStyle = lipgloss.NewStyle().
 			Foreground(colorMuted).
 			Italic(true)

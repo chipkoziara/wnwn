@@ -2820,8 +2820,11 @@ func (m Model) renderProjectDetailView(b *strings.Builder) {
 			if item.task.State != model.StateEmpty && item.task.State != model.StateDone {
 				meta = append(meta, stateStyle.Render(string(item.task.State)))
 			}
+			if item.task.Scheduled != nil {
+				meta = append(meta, scheduledStyle.Render("sched:"+formatOptionalTime(item.task.Scheduled)))
+			}
 			if item.task.Deadline != nil {
-				meta = append(meta, deadlineStyle.Render("due:"+item.task.Deadline.Format("2006-01-02")))
+				meta = append(meta, deadlineStyle.Render("due:"+formatOptionalTime(item.task.Deadline)))
 			}
 			if link := urlIndicatorMeta(item.task.URL); link != "" {
 				meta = append(meta, link)
@@ -2934,8 +2937,11 @@ func (m Model) renderTask(idx int, task model.Task) string {
 	if task.State != model.StateEmpty && task.State != model.StateDone && task.State != model.StateCanceled {
 		meta = append(meta, stateStyle.Render(string(task.State)))
 	}
+	if task.Scheduled != nil {
+		meta = append(meta, scheduledStyle.Render("sched:"+formatOptionalTime(task.Scheduled)))
+	}
 	if task.Deadline != nil {
-		meta = append(meta, deadlineStyle.Render("due:"+task.Deadline.Format("2006-01-02")))
+		meta = append(meta, deadlineStyle.Render("due:"+formatOptionalTime(task.Deadline)))
 	}
 	if link := urlIndicatorMeta(task.URL); link != "" {
 		meta = append(meta, link)
@@ -5243,6 +5249,12 @@ func (m Model) renderWeeklyReview(b *strings.Builder) {
 		if vt.Task.WaitingSince != nil && m.weeklyReviewStep == weeklyStepWaiting {
 			meta = append(meta, helpStyle.Render("since:"+vt.Task.WaitingSince.Format("2006-01-02")))
 		}
+		if vt.Task.Scheduled != nil {
+			meta = append(meta, scheduledStyle.Render("sched:"+formatOptionalTime(vt.Task.Scheduled)))
+		}
+		if vt.Task.Deadline != nil {
+			meta = append(meta, deadlineStyle.Render("due:"+formatOptionalTime(vt.Task.Deadline)))
+		}
 		if vt.Task.ArchivedAt != nil && m.weeklyReviewStep == weeklyStepArchived {
 			meta = append(meta, helpStyle.Render("archived:"+vt.Task.ArchivedAt.Format("2006-01-02")))
 		}
@@ -5357,8 +5369,11 @@ func (m Model) renderViewResults(b *strings.Builder) {
 		if task.State != model.StateEmpty && task.State != model.StateDone && task.State != model.StateCanceled {
 			meta = append(meta, stateStyle.Render(string(task.State)))
 		}
+		if task.Scheduled != nil {
+			meta = append(meta, scheduledStyle.Render("sched:"+formatOptionalTime(task.Scheduled)))
+		}
 		if task.Deadline != nil {
-			meta = append(meta, deadlineStyle.Render("due:"+task.Deadline.Format("2006-01-02")))
+			meta = append(meta, deadlineStyle.Render("due:"+formatOptionalTime(task.Deadline)))
 		}
 		if link := urlIndicatorMeta(task.URL); link != "" {
 			meta = append(meta, link)
