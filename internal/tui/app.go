@@ -2708,11 +2708,13 @@ func (m Model) renderListView(b *strings.Builder) {
 		}
 		b.WriteString(taskStyle.Render(emptyMsg))
 		b.WriteString("\n")
-	} else {
-		for i, task := range m.list.Tasks {
-			b.WriteString(m.renderTask(i, task))
-			b.WriteString("\n")
-		}
+		return
+	}
+
+	start, end := m.visibleRange(len(m.list.Tasks), m.cursor)
+	for i := start; i < end; i++ {
+		b.WriteString(m.renderTask(i, m.list.Tasks[i]))
+		b.WriteString("\n")
 	}
 }
 
@@ -2724,7 +2726,9 @@ func (m Model) renderProjectListView(b *strings.Builder) {
 		return
 	}
 
-	for i, p := range m.projects {
+	start, end := m.visibleRange(len(m.projects), m.cursor)
+	for i := start; i < end; i++ {
+		p := m.projects[i]
 		isSelected := i == m.cursor
 
 		if isSelected {
@@ -2781,7 +2785,9 @@ func (m Model) renderProjectDetailView(b *strings.Builder) {
 		return
 	}
 
-	for i, item := range items {
+	start, end := m.visibleRange(len(items), m.projCursor)
+	for i := start; i < end; i++ {
+		item := items[i]
 		isSelected := i == m.projCursor
 
 		if item.isTask {
@@ -5262,7 +5268,9 @@ func (m Model) renderViewResults(b *strings.Builder) {
 		return
 	}
 
-	for i, vt := range m.viewResults {
+	start, end := m.visibleRange(len(m.viewResults), m.viewCursor)
+	for i := start; i < end; i++ {
+		vt := m.viewResults[i]
 		isSelected := i == m.viewCursor
 		task := vt.Task
 
