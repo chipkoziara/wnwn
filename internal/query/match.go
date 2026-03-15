@@ -95,15 +95,24 @@ func matchEq(c Clause, task model.Task, source string) bool {
 		if task.Deadline == nil || c.Time.IsZero() {
 			return false
 		}
+		if c.HasRange {
+			return inDateRange(*task.Deadline, c.Time, c.EndTime)
+		}
 		return sameDay(*task.Deadline, c.Time)
 	case "scheduled":
 		if task.Scheduled == nil || c.Time.IsZero() {
 			return false
 		}
+		if c.HasRange {
+			return inDateRange(*task.Scheduled, c.Time, c.EndTime)
+		}
 		return sameDay(*task.Scheduled, c.Time)
 	case "created":
 		if c.Time.IsZero() {
 			return strings.Contains(task.Created.Format("2006-01-02"), val)
+		}
+		if c.HasRange {
+			return inDateRange(task.Created, c.Time, c.EndTime)
 		}
 		return sameDay(task.Created, c.Time)
 	case "modified":
@@ -112,6 +121,9 @@ func matchEq(c Clause, task model.Task, source string) bool {
 		}
 		if c.Time.IsZero() {
 			return strings.Contains(task.ModifiedAt.Format("2006-01-02"), val)
+		}
+		if c.HasRange {
+			return inDateRange(*task.ModifiedAt, c.Time, c.EndTime)
 		}
 		return sameDay(*task.ModifiedAt, c.Time)
 	}
@@ -163,6 +175,13 @@ func sameDay(a, b time.Time) bool {
 	ay, am, ad := a.Date()
 	by, bm, bd := b.Date()
 	return ay == by && am == bm && ad == bd
+}
+
+func inDateRange(t, start, end time.Time) bool {
+	td := dayOf(t)
+	sd := dayOf(start)
+	ed := dayOf(end)
+	return (td.Equal(sd) || td.After(sd)) && (td.Equal(ed) || td.Before(ed))
 }
 
 func dayOf(t time.Time) time.Time {

@@ -74,6 +74,19 @@ func TestMatchDateComparators(t *testing.T) {
 	}
 }
 
+func TestMatchDateRange(t *testing.T) {
+	task := makeTask()
+	if !match(t, "deadline:2026-03-10..2026-03-20", task, "") {
+		t.Error("deadline range should include 2026-03-15")
+	}
+	if !match(t, "deadline:today..20d", task, "") {
+		t.Error("relative deadline range should include 2026-03-15 from testNow 2026-03-01")
+	}
+	if match(t, "deadline:today..7d", task, "") {
+		t.Error("deadline:today..7d should not include 2026-03-15")
+	}
+}
+
 func TestMatchBooleanAndOrNot(t *testing.T) {
 	task := makeTask()
 	if !match(t, "state:next-action AND tag:travel", task, "") {

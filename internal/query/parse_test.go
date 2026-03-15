@@ -78,6 +78,20 @@ func TestParseDateEq(t *testing.T) {
 	}
 }
 
+func TestParseDateRange(t *testing.T) {
+	c := mustClauseExpr(t, "deadline:today..7d").Clause
+	if !c.HasRange {
+		t.Fatalf("expected HasRange true")
+	}
+	if !c.Time.Equal(today) {
+		t.Fatalf("start = %v, want %v", c.Time, today)
+	}
+	wantEnd := today.AddDate(0, 0, 7)
+	if !c.EndTime.Equal(wantEnd) {
+		t.Fatalf("end = %v, want %v", c.EndTime, wantEnd)
+	}
+}
+
 func TestParseRelativeDates(t *testing.T) {
 	if c := mustClauseExpr(t, "deadline:<today").Clause; !c.Time.Equal(today) {
 		t.Errorf("today resolved to %v, want %v", c.Time, today)
@@ -149,5 +163,12 @@ func TestParseBadDate(t *testing.T) {
 	_, err := Parse("deadline:<notadate", testNow)
 	if err == nil {
 		t.Error("expected error for bad date, got nil")
+	}
+}
+
+func TestParseBadDateRange(t *testing.T) {
+	_, err := Parse("deadline:7d..today", testNow)
+	if err == nil {
+		t.Error("expected error for reverse date range, got nil")
 	}
 }

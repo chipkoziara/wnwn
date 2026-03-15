@@ -24,10 +24,12 @@ const (
 
 // Clause is a single filter term.
 type Clause struct {
-	Field string
-	Op    Op
-	Value string
-	Time  time.Time
+	Field    string
+	Op       Op
+	Value    string
+	Time     time.Time
+	EndTime  time.Time
+	HasRange bool
 }
 
 // Expr is a boolean query expression tree.
@@ -214,6 +216,24 @@ func parseToken(tok string, now time.Time) (Clause, error) {
 			return Clause{}, fmt.Errorf("unknown field %q", rawField)
 		}
 		if dateFields[rawField] {
+			if strings.Contains(rest, "..") {
+				parts := strings.SplitN(rest, "..", 2)
+				if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+					return Clause{}, fmt.Errorf("bad date range in %s:%s", rawField, rest)
+				}
+				start, err := resolveDate(parts[0], now)
+				if err != nil {
+					return Clause{}, fmt.Errorf("bad date range start in %s:%s: %w", rawField, rest, err)
+				}
+				end, err := resolveDate(parts[1], now)
+				if err != nil {
+					return Clause{}, fmt.Errorf("bad date range end in %s:%s: %w", rawField, rest, err)
+				}
+				if end.Before(start) {
+					return Clause{}, fmt.Errorf("bad date range in %s:%s: end before start", rawField, rest)
+				}
+				return Clause{Field: rawField, Op: OpEq, Value: rest, Time: start, EndTime: end, HasRange: true}, nil
+			}
 			switch {
 			case strings.HasPrefix(rest, "<="):
 				t, err := resolveDate(rest[2:], now)
