@@ -16,6 +16,7 @@ import (
 	"github.com/wnwn/wnwn/internal/config"
 	"github.com/wnwn/wnwn/internal/model"
 	"github.com/wnwn/wnwn/internal/query"
+	"github.com/wnwn/wnwn/internal/search"
 	"github.com/wnwn/wnwn/internal/service"
 	"github.com/wnwn/wnwn/internal/store"
 	"github.com/wnwn/wnwn/internal/tui/datepicker"
@@ -211,6 +212,7 @@ type Model struct {
 	activeViewName  string             // name of the currently open view (or "Ad-hoc")
 	activeViewQuery string             // the query string for the active view
 	activeViewInclA bool               // whether the active view includes archived tasks
+	activeViewFuzzy bool               // whether the active view is fuzzy-search based
 	viewResults     []service.ViewTask // filtered tasks for the active view
 	viewCursor      int                // cursor within view results
 	tabOrder        []appTab
@@ -613,6 +615,7 @@ type viewResultsLoadedMsg struct {
 	undoApply       func() error
 	undoPrompt      string
 	undoSuccess     string
+	isFuzzy         bool
 	err             error
 }
 
@@ -723,6 +726,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeViewName = msg.name
 		m.activeViewQuery = msg.queryStr
 		m.activeViewInclA = msg.includeArchived
+		m.activeViewFuzzy = msg.isFuzzy
 		m.viewResults = msg.results
 		m.viewCursor = 0
 		m.view = viewViewResults
@@ -3841,7 +3845,7 @@ func (m Model) helpText() string {
 		if m.mode == modeEditingField {
 			return "enter: run query  esc: cancel"
 		}
-		return "enter: open view  /: ad-hoc query  W: weekly review  j/k: navigate  1..N/tab: switch tab  q: quit"
+		return "enter: open view  /: ad-hoc query  ?: fuzzy search  W: weekly review  j/k: navigate  1..N/tab: switch tab  q: quit"
 	}
 	if m.view == viewWeeklyReview {
 		return "j/k: navigate  h/l: prev/next section  enter: open item  o: open URL  d/c/s/w: state  A: archive  x: trash  R: refresh  esc: back"
@@ -4319,6 +4323,17 @@ func (m Model) runQuery(name, queryStr string, includeArchived bool) tea.Cmd {
 	}
 }
 
+func (m Model) runFuzzyQuery(name, needle string, includeArchived bool) tea.Cmd {
+	return func() tea.Msg {
+		all, err := m.collectViewTasks(name, includeArchived)
+		if err != nil {
+			return viewResultsLoadedMsg{name: name, queryStr: needle, includeArchived: includeArchived, err: err, isFuzzy: true}
+		}
+		results := search.Rank(all, needle)
+		return viewResultsLoadedMsg{name: name, queryStr: needle, includeArchived: includeArchived, results: results, isFuzzy: true}
+	}
+}
+
 func (m Model) collectViewTasks(name string, includeArchived bool) ([]service.ViewTask, error) {
 	if strings.EqualFold(name, "Archives") {
 		return m.svc.CollectArchiveTasks()
@@ -4649,6 +4664,14 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd := m.input.Focus()
 		return m, cmd
 
+	case "?":
+		m.mode = modeEditingField
+		m.input.Reset()
+		m.input.Placeholder = "fuzzy search tasks, tags, notes, projects..."
+		m.input.SetValue("")
+		cmd := m.input.Focus()
+		return m, cmd
+
 	case "W", "w":
 		return m, m.loadWeeklyReview
 
@@ -4685,9 +4708,13 @@ func (m Model) updateViewList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			queryStr := strings.TrimSpace(m.input.Value())
+			placeholder := m.input.Placeholder
 			m.mode = modeNormal
 			if queryStr == "" {
 				return m, nil
+			}
+			if strings.Contains(strings.ToLower(placeholder), "fuzzy search") {
+				return m, m.runFuzzyQuery("Fuzzy", queryStr, false)
 			}
 			return m, m.runQuery("Ad-hoc", queryStr, false)
 		case "esc":
@@ -5308,12 +5335,16 @@ func (m Model) renderViewList(b *strings.Builder) {
 	// Ad-hoc query input when active.
 	if m.mode == modeEditingField {
 		b.WriteString("\n")
-		b.WriteString(inputPromptStyle.Render("  Query: "))
+		label := "  Query: "
+		if strings.Contains(strings.ToLower(m.input.Placeholder), "fuzzy search") {
+			label = "  Fuzzy: "
+		}
+		b.WriteString(inputPromptStyle.Render(label))
 		b.WriteString(m.input.View())
 		b.WriteString("\n")
 	} else {
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("  /: ad-hoc query"))
+		b.WriteString(helpStyle.Render("  /: ad-hoc query   ?: fuzzy search"))
 		b.WriteString("\n")
 	}
 }
@@ -5325,7 +5356,11 @@ func (m Model) renderViewResults(b *strings.Builder) {
 	b.WriteString(projectTitleStyle.Render(header))
 	if m.activeViewQuery != "" {
 		b.WriteString("  ")
-		b.WriteString(helpStyle.Render(m.activeViewQuery))
+		if m.activeViewFuzzy {
+			b.WriteString(helpStyle.Render("fuzzy: " + m.activeViewQuery))
+		} else {
+			b.WriteString(helpStyle.Render(m.activeViewQuery))
+		}
 	}
 	b.WriteString("\n\n")
 
