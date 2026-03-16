@@ -3820,7 +3820,7 @@ func (m Model) helpText() string {
 		case stepNotActionable:
 			return "t: trash  esc: back"
 		case stepEnrich:
-			return "t: text  g: tags  d: deadline  c: schedule  n: notes  enter: continue  esc: back"
+			return ""
 		case stepEnrichTags:
 			return "tab: add tag  enter: done  esc: cancel"
 		case stepRoute:

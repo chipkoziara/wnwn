@@ -235,7 +235,7 @@ Prioritized by impact:
 
 ### Recent Changes
 
-- **Process Inbox actionable step no longer duplicates key hints** — The actionable step already renders its choices inline (`[y] yes [n] no [s] skip [q] quit`), so the footer help now stays blank for that step instead of repeating the same bindings a second time. This keeps Process Inbox visually cleaner and avoids the double-keybinding bug shown during release prep.
+- **Process Inbox actionable/enrich steps no longer duplicate key hints** — The actionable and enrich steps already render their choices inline, so the footer help now stays blank for those steps instead of repeating the same bindings a second time. This keeps Process Inbox visually cleaner and fixes the duplicate-keybinding overlays found during release prep.
 - **Public demo script added** — Added `demo-script.txt` as a lightweight walkthrough for demos and onboarding. It uses the reproducible fixture packs already documented in `README.md` and keeps the guidance action-oriented instead of assuming default keybindings are unchanged.
 - **Reproducible demo flows documented** — `README.md` now includes copy/paste demo setups for both the general fixture pack (`./testdata`) and the Weekly Review fixture pack (`./testdata/weekly-review`), making it easier to create demos, recordings, and onboarding walkthroughs with representative data.
 - **v0.1.0 release boundary clarified** — The public release notes now keep the release checklist focused on what must be true before tagging: accurate public docs, aligned install/module metadata, passing release checks, clean privacy/release hygiene, and a final manual interactive TUI smoke test.
