@@ -74,11 +74,11 @@ Manual interactive TUI smoke testing remains a good final pre-tag check.
 
 These are intentionally **non-blocking** for the first public release:
 
-- Tickler-file visualization is not yet implemented.
-- Recurring tasks are not yet implemented.
-- Sync / multi-device durability is not yet implemented.
+- Sync / multi-device durability is not implemented (local only).
+- Recurring tasks are not implemented.
 - Fuzzy search is currently a separate mode from the DSL rather than a combined query pipeline.
 - Process Inbox undo steering is still an improvement area.
+- Tickler-file visualization is not implemented.
 - `v0.1.0` ships as a source-build release; prebuilt binaries are not yet part of the distribution story.
 - Repo test fixtures can be used as reproducible demo data via `./testdata` and `./testdata/weekly-review`.
 
