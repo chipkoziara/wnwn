@@ -5,8 +5,7 @@ A Getting Things Done (GTD) inspired TUI personal productivity app built in Go. 
 Runtime data lives in SQLite for fast local access, with first-class Markdown import/export for portability, backup, and interoperability.
 
 ## Status
-
-`wnwn` is currently aiming at a **first public release: v0.1.0**.
+This is an early release, not a finished product. Expect core workflow iteration and intentionally deferred features.
 
 The core GTD workflow is already usable end-to-end:
 - capture into inbox
@@ -14,8 +13,6 @@ The core GTD workflow is already usable end-to-end:
 - manage single actions and projects
 - review work through saved views and weekly review
 - query and update tasks/projects from the CLI
-
-This is an early release, not a finished product. Expect solid core workflows, active iteration, and a few intentionally deferred features.
 
 ## Features
 
