@@ -87,6 +87,32 @@ That gives you:
 - a throwaway demo data directory
 - one captured inbox item to process when the TUI opens
 
+### Reproducible demo flow
+
+If you want a richer demo dataset instead of starting nearly empty:
+
+```bash
+# from the repo root
+go build -o wnwn ./cmd/wnwn/
+rm -rf /tmp/wnwn-demo
+WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn import-md --from ./testdata --mode replace
+WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn
+```
+
+For a Weekly Review-focused demo:
+
+```bash
+go build -o wnwn ./cmd/wnwn/
+rm -rf /tmp/wnwn-review-demo
+WNWN_DATA_DIR=/tmp/wnwn-review-demo ./wnwn import-md --from ./testdata/weekly-review --mode replace
+WNWN_DATA_DIR=/tmp/wnwn-review-demo ./wnwn
+```
+
+Suggested demo path:
+- use `./testdata` for a general product walkthrough
+- use `./testdata/weekly-review` when you specifically want to show Weekly Review behavior
+- use `demo-script.txt` as a lightweight walkthrough aid for demos and onboarding
+
 ### Launch the TUI
 
 ```bash

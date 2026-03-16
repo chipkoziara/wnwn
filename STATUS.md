@@ -235,6 +235,8 @@ Prioritized by impact:
 
 ### Recent Changes
 
+- **Public demo script added** — Added `demo-script.txt` as a lightweight walkthrough for demos and onboarding. It uses the reproducible fixture packs already documented in `README.md` and keeps the guidance action-oriented instead of assuming default keybindings are unchanged.
+- **Reproducible demo flows documented** — `README.md` now includes copy/paste demo setups for both the general fixture pack (`./testdata`) and the Weekly Review fixture pack (`./testdata/weekly-review`), making it easier to create demos, recordings, and onboarding walkthroughs with representative data.
 - **v0.1.0 release boundary clarified** — The public release notes now keep the release checklist focused on what must be true before tagging: accurate public docs, aligned install/module metadata, passing release checks, clean privacy/release hygiene, and a final manual interactive TUI smoke test.
 - **Release hardening checks executed** — `go test ./...`, `go test -race ./...`, and `go build -o wnwn ./cmd/wnwn/` all passed. A fresh-data-dir CLI smoke flow (`wnwn add`) and Markdown export/import dry-run also passed, leaving manual interactive TUI smoke testing as the main remaining human validation before tagging `v0.1.0`.
 - **Release build steps documented in public docs** — `README.md` and `RELEASE_NOTES_v0.1.0.md` now include the practical `v0.1.0` release procedure: test, race test, build, smoke-test on a fresh data dir, verify Markdown export/import, and confirm the release docs match the candidate before tagging.

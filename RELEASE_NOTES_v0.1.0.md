@@ -80,6 +80,7 @@ These are intentionally **non-blocking** for the first public release:
 - Fuzzy search is currently a separate mode from the DSL rather than a combined query pipeline.
 - Process Inbox undo steering is still an improvement area.
 - `v0.1.0` ships as a source-build release; prebuilt binaries are not yet part of the distribution story.
+- Repo test fixtures can be used as reproducible demo data via `./testdata` and `./testdata/weekly-review`.
 
 ## Release boundary for v0.1.0
 

@@ -1,0 +1,61 @@
+wnwn demo walkthrough
+=====================
+
+Use this with the reproducible fixture packs documented in README.md.
+
+General product demo setup
+--------------------------
+
+  go build -o wnwn ./cmd/wnwn/
+  rm -rf /tmp/wnwn-demo
+  WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn import-md --from ./testdata --mode replace
+  WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn
+
+Suggested live walkthrough
+--------------------------
+
+1. Inbox
+   - show existing inbox items
+   - add a new inbox item with `a`
+   - open Process Inbox with `P`
+   - route one item to Actions and one to a Project
+
+2. Actions
+   - switch to Actions
+   - show the routed next action
+   - edit or change state on one task
+
+3. Projects
+   - open a project
+   - show sub-groups and project task navigation
+   - open task detail or project edit
+
+4. Views
+   - switch to Views
+   - open "Next Actions"
+   - run `/ state:waiting-for`
+   - run `? mockups` to show fuzzy search
+
+Weekly Review-focused demo setup
+--------------------------------
+
+  go build -o wnwn ./cmd/wnwn/
+  rm -rf /tmp/wnwn-review-demo
+  WNWN_DATA_DIR=/tmp/wnwn-review-demo ./wnwn import-md --from ./testdata/weekly-review --mode replace
+  WNWN_DATA_DIR=/tmp/wnwn-review-demo ./wnwn
+
+Suggested weekly review walkthrough
+----------------------------------
+
+1. Open Views
+2. Press `W` for Weekly Review
+3. Move between sections with `h` / `l`
+4. Open an item with `enter`
+5. Show one actionable mutation on an active item
+
+Notes
+-----
+
+- This file is intended as a lightweight walkthrough aid for demos, onboarding, and manual exploration.
+- Prefer demo data from `./testdata` and `./testdata/weekly-review` rather than personal task data.
+- If keybindings are customized, follow the actions described here rather than assuming the default keys are unchanged.
