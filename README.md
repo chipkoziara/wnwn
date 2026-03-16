@@ -226,7 +226,7 @@ Set `WNWN_DATA_DIR` to choose where app data is stored.
 Defaults follow XDG data conventions: `$XDG_DATA_HOME/wnwn` when set, otherwise `~/.local/share/wnwn`.
 
 ```bash
-export WNWN_DATA_DIR=~/Dropbox/wnwn
+export WNWN_DATA_DIR=~/my-wnwn-data
 ```
 
 Config file resolution order:
