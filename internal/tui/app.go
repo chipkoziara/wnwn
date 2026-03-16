@@ -13,13 +13,13 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/wnwn/wnwn/internal/config"
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/query"
-	"github.com/wnwn/wnwn/internal/search"
-	"github.com/wnwn/wnwn/internal/service"
-	"github.com/wnwn/wnwn/internal/store"
-	"github.com/wnwn/wnwn/internal/tui/datepicker"
+	"github.com/chipkoziara/wnwn/internal/config"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/query"
+	"github.com/chipkoziara/wnwn/internal/search"
+	"github.com/chipkoziara/wnwn/internal/service"
+	"github.com/chipkoziara/wnwn/internal/store"
+	"github.com/chipkoziara/wnwn/internal/tui/datepicker"
 )
 
 // mode represents the current UI mode.

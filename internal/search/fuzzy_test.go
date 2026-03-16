@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/service"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/service"
 )
 
 func vt(text, notes, source string, tags ...string) service.ViewTask {

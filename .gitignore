@@ -1,7 +1,9 @@
 /wnwn
+wnwn
 .opencode/
+.pi/
+docs/
 STATUS.md
-PRD.md
 CONTRIBUTING.md
 ENHANCEMENTS.md
 BRD.md

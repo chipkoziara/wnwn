@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/wnwn/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/model"
 )
 
 // yamlQuote quotes a string for safe YAML output if it contains

@@ -1,10 +1,10 @@
 # wnwn Project Status
 
-Last updated: 2026-03-08 (session 25)
+Last updated: 2026-03-16 (session 26)
 
 ## What This Is
 
-A GTD (Getting Things Done) TUI app built in Go with Bubbletea v2, Lipgloss v2, and Bubbles v2. The spec is in `BRD.md`. SQLite is the runtime data store, with Markdown import/export for portability.
+A Getting Things Done (GTD) inspired TUI app built in Go with Bubbletea v2, Lipgloss v2, and Bubbles v2. The spec is in `BRD.md`. SQLite is the runtime data store, with Markdown import/export for portability.
 
 ## What's Built
 
@@ -235,6 +235,17 @@ Prioritized by impact:
 
 ### Recent Changes
 
+- **v0.1.0 release boundary clarified** — The public release notes now keep the release checklist focused on what must be true before tagging: accurate public docs, aligned install/module metadata, passing release checks, clean privacy/release hygiene, and a final manual interactive TUI smoke test.
+- **Release hardening checks executed** — `go test ./...`, `go test -race ./...`, and `go build -o wnwn ./cmd/wnwn/` all passed. A fresh-data-dir CLI smoke flow (`wnwn add`) and Markdown export/import dry-run also passed, leaving manual interactive TUI smoke testing as the main remaining human validation before tagging `v0.1.0`.
+- **Release build steps documented in public docs** — `README.md` and `RELEASE_NOTES_v0.1.0.md` now include the practical `v0.1.0` release procedure: test, race test, build, smoke-test on a fresh data dir, verify Markdown export/import, and confirm the release docs match the candidate before tagging.
+- **README onboarding polished for public release** — `README.md` now includes a faster first-run path, a concrete “try this workflow” sequence, explicit source-build-only wording for `v0.1.0`, and backup guidance centered on Markdown export from the SQLite runtime store.
+- **v0.1.0 distribution model decided** — The first public release will be source-build only: clone the repo and build with Go 1.25+. Prebuilt binaries are explicitly deferred, and `mise` is documented as optional toolchain convenience rather than part of the required user install story.
+- **Privacy audit documented for public release** — Added `docs/privacy-audit.md` after scanning tracked repo contents for obvious secrets, private URLs, credentials, and personally identifying demo/task data. No obvious sensitive material was found in the reviewed tracked files; the main follow-up is to avoid accidentally shipping the local `wnwn` binary and to re-run the audit after adding screenshots or richer demo assets.
+- **v0.1.0 release notes refreshed** — `RELEASE_NOTES_v0.1.0.md` now matches the current product: Views tab, fuzzy search, richer query DSL, weekly review, CLI automation commands, and current known limits. It no longer claims fuzzy search is missing.
+- **Go module path aligned with the public repository** — `go.mod` and all internal imports now use `github.com/chipkoziara/wnwn`, matching the real GitHub repository path before `v0.1.0`. `docs/public-release-metadata.md` was updated to record the resolved release decision, and `go test ./...` passes after the migration.
+- **README refreshed for public release accuracy** — `README.md` now reflects the current four-tab TUI structure (including Views), fuzzy search, weekly review, current import/export CLI usage, config behavior, known v0.1.0 limitations, and an explicit early-release framing. It also removes stale roadmap claims for already-shipped features and stops presenting placeholder install text as if it were final.
+- **Public release plan documented** — Added `docs/release-plan.md` to define a proposed `v0.1.0` boundary, a release-readiness checklist, current blockers, and recommended non-blockers. The main issues identified are stale public-facing docs (especially `README.md` and `RELEASE_NOTES_v0.1.0.md`) and the need to decide the initial install/distribution story.
+
 - **Text input no longer swallows `u` while undo is armed** — Bubble's textinput default suggestion-accept binding also uses `u`, which conflicted with normal typing in inline editors while the app-level undo key is configured to `u`. The TUI now clears `textinput`'s suggestion-accept binding during model initialization so literal `u` remains typable in task/detail/query editors. App-level undo remains restricted to `modeNormal`, preserving undo behavior without hijacking text entry.
 - **Scrollable list-style views** — Inbox/actions lists, project list/detail, saved views, view results, and weekly review now clamp to the visible terminal height instead of rendering past the bottom of the screen. A shared `scrollOffset` + `visibleRange()` pattern keeps the active cursor visible after navigation and window resizes, while preserving the existing cursor semantics (`m.cursor`, `m.projCursor`, `m.viewCursor`, weekly review cursors).
 - **Date field editing is now reversible and validated** — In task/project detail screens, selecting a date field and pressing `del`/`backspace` clears it immediately; opening the task/project date picker also supports `del`/`backspace` to clear. The date picker help text now makes the two-step time-removal flow explicit: `t` toggles the time row, and `enter` confirms a date-only value when time is hidden. Manual task detail date text entry validates input and shows a status message for invalid formats (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`) instead of silently ignoring bad values.
@@ -255,34 +266,42 @@ Prioritized by impact:
 
 6. **Timezone handling** — Don't append timezones. The current naive-local-time approach is correct for a personal GTD app where you're always viewing your own tasks on your own machine. Adding timezone awareness (parsing, display, DST) adds significant complexity with minimal benefit. If syncing across timezones is ever needed, it should be a dedicated feature.
 
-7. **Invalid datetime validation** — The date picker prevents most invalid dates. Text input for dates (in task detail view) could get validation, but it's low priority. The date picker is the primary input mechanism.
-
-8. **Single Actions as a View (model simplification exploration)** — Explore treating Single Actions / Next Actions as a first-class saved view conceptually, rather than a distinct primary tab/list in UX language.
+7. **Single Actions as a View (model simplification exploration)** — Explore treating Single Actions / Next Actions as a first-class saved view conceptually, rather than a distinct primary tab/list in UX language.
    - **Phase 1 (low-risk):** keep current storage model, but experiment with navigation and labeling so Single Actions behaves like a built-in view.
    - **Phase 2 (optional refactor):** evaluate collapsing list-specific assumptions into a more view-centric task model if Phase 1 validates the UX.
    - **Goal:** reduce mental overhead by making filters/views the primary interaction model without regressing inbox processing and refile workflows.
 
-9. **Force-delete sub-group workflow** — Add an assisted delete flow for non-empty sub-groups in project detail.
+8. **Force-delete sub-group workflow** — Add an assisted delete flow for non-empty sub-groups in project detail.
    - Current behavior blocks deleting non-empty sub-groups and requires manual task moves.
    - Future flow: on delete of non-empty sub-group, prompt for destination sub-group and move all tasks before deletion.
    - Keep current safe default for empty sub-groups as-is.
 
-10. **Task detail field ordering pass** — Revisit task edit field order and hierarchy (for example where notes should sit) to reduce friction during quick edits.
+9. **Task detail field ordering pass** — Revisit task edit field order and hierarchy (for example where notes should sit) to reduce friction during quick edits.
 
-11. **Keybinding ergonomics audit** — Review default keybindings across list/project/view-results flows for mnemonic consistency and reduced cognitive switching.
+10. **Keybinding ergonomics audit** — Review default keybindings across list/project/view-results flows for mnemonic consistency and reduced cognitive switching.
 
-12. **Project-grouped view rendering** — Add an optional view-results mode that groups tasks by project heading (instead of a flat mixed list), with quick jump/open behavior.
+11. **Project-grouped view rendering** — Add an optional view-results mode that groups tasks by project heading (instead of a flat mixed list), with quick jump/open behavior.
 
-13. **Configurable data directory in config.toml** — Add an optional config field for default data path so users can persist storage location without relying only on `WNWN_DATA_DIR`.
+12. **Configurable data directory in config.toml** — Add an optional config field for default data path so users can persist storage location without relying only on `WNWN_DATA_DIR`.
 
-14. **Go module path alignment** — Optionally align `go.mod` module path with the actual GitHub repository path for convention and discoverability.
+13. **Go module path alignment** — Optionally align `go.mod` module path with the actual GitHub repository path for convention and discoverability.
+
+14. **Jump-to-source navigation from aggregated views** — Add a source-aware navigation action from view results / weekly review tasks back to the originating inbox, single-action list, or project detail context.
+
+15. **Recurring tasks** — Design a recurrence model that fits the SQLite runtime store, Markdown interchange, and GTD workflows without breaking the stateless service pattern.
+
+16. **Dropbox sync with conflict safety** — Explore sync for SQLite-backed data across multiple clients, with explicit handling for concurrent edits, backups, and durability guarantees.
+
+17. **Export formats and backup workflow** — Add explicit backup/export support beyond Markdown interchange, including user-facing database backup flows and possibly additional export targets.
+
+18. **Public release readiness** — Packaging, installation docs, polish, and release criteria for making wnwn usable by external users.
 
 ### Power Features (prioritized)
 
-15. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
-16. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
-17. **Search** - Fuzzy free-text. The query DSL already handles `text:keyword`; fuzzy matching would be an enhancement on top.
-18. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
+19. **Views / query DSL / filtering** - ✅ Shipped (session 4). Config-backed saved views shipped in session 18.
+20. **Config file** - ✅ Foundation shipped (session 8) and expanded in session 18: config now supports archive auto-archive toggles, startup default view, top-tab order, saved views, and configurable keybindings for core actions. Remaining config work: theme/colors, default tags, review reminders.
+21. **Search** - ✅ Shipped (session 26). Views tab fuzzy search mode is available via `?`, ranking matches across task text, notes, tags, URL, waiting_on, and source/project provenance. Current limitation: fuzzy search is a separate mode from the DSL rather than a combined query pipeline.
+22. **Tickler file** - Skeuomorphic 43-folder visualization as a skin on the agenda view (BRD section 2). Not started.
 
 ### Known Issues
 - None currently open. All tests pass (112 total: 8 parser + 45 query + 44 service + 3 writer/parser roundtrip + 2 sqlite store + 8 config + 2 model).

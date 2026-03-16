@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/writer"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/writer"
 )
 
 func mustTime(s string) time.Time {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/wnwn/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/model"
 )
 
 type driver interface {

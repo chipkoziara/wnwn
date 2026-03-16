@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/wnwn/wnwn/internal/service"
+	"github.com/chipkoziara/wnwn/internal/service"
 )
 
 type scoredTask struct {

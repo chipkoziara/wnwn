@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wnwn/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/model"
 	"gopkg.in/yaml.v3"
 )
 

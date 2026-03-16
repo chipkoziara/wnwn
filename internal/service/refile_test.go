@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/wnwn/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/model"
 )
 
 func TestRefileInboxToSingleActions(t *testing.T) {

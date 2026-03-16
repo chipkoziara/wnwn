@@ -12,12 +12,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/wnwn/wnwn/internal/config"
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/query"
-	"github.com/wnwn/wnwn/internal/service"
-	"github.com/wnwn/wnwn/internal/store"
-	"github.com/wnwn/wnwn/internal/tui"
+	"github.com/chipkoziara/wnwn/internal/config"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/query"
+	"github.com/chipkoziara/wnwn/internal/service"
+	"github.com/chipkoziara/wnwn/internal/store"
+	"github.com/chipkoziara/wnwn/internal/tui"
 )
 
 func main() {
@@ -62,7 +62,7 @@ func cmdTUI() {
 }
 
 func printUsage() {
-	fmt.Println("wnwn: a GTD TUI app")
+	fmt.Println("wnwn: a GTD-inspired TUI app")
 	fmt.Println()
 	fmt.Println("usage:")
 	fmt.Println("  wnwn              Launch the TUI")

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wnwn/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/model"
 )
 
 // MatchAll reports whether a task satisfies the full query expression.

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/parser"
-	"github.com/wnwn/wnwn/internal/writer"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/parser"
+	"github.com/chipkoziara/wnwn/internal/writer"
 )
 
 type markdownStore struct {

@@ -3,8 +3,8 @@ package service
 import (
 	"testing"
 
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/store"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/store"
 )
 
 func TestCollectAllTasks_Empty(t *testing.T) {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/wnwn/wnwn/internal/id"
-	"github.com/wnwn/wnwn/internal/model"
-	"github.com/wnwn/wnwn/internal/store"
+	"github.com/chipkoziara/wnwn/internal/id"
+	"github.com/chipkoziara/wnwn/internal/model"
+	"github.com/chipkoziara/wnwn/internal/store"
 )
 
 // Service provides GTD task operations.

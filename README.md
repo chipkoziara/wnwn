@@ -1,24 +1,39 @@
 # wnwn
 
-A GTD (Getting Things Done) TUI app built in Go. Simple, configurable, and a little quirky — because productivity software shouldn't be boring.
+A Getting Things Done (GTD) inspired TUI personal productivity app built in Go. Simple, configurable, and a little quirky — because productivity software shouldn't be boring.
 
-Runtime data is stored in SQLite, with first-class Markdown import/export for portability and backup.
+Runtime data lives in SQLite for fast local access, with first-class Markdown import/export for portability, backup, and interoperability.
+
+## Status
+
+`wnwn` is currently aiming at a **first public release: v0.1.0**.
+
+The core GTD workflow is already usable end-to-end:
+- capture into inbox
+- process and refile
+- manage single actions and projects
+- review work through saved views and weekly review
+- query and update tasks/projects from the CLI
+
+This is an early release, not a finished product. Expect solid core workflows, active iteration, and a few intentionally deferred features.
 
 ## Features
 
-- **Three-tab TUI** — Inbox, Single Actions, Projects
+- **Four top-level TUI views** — Inbox, Actions, Projects, and Views
 - **Full GTD workflow** — capture, process, organize, review
 - **CLI quick capture** — add tasks from any terminal without opening the TUI
+- **CLI query + update** — inspect and mutate tasks/projects by stable ID from scripts or local agents
 - **SQLite runtime + Markdown interchange** — fast local storage with portable plain-text import/export
-- **GTD contexts via tags** — `@home`, `@computer`, `@errands`, etc.
-- **Project sub-groups** — organize large projects into named phases or milestones
-- **Project editing** — rename projects (auto-renames the file), set state, deadline, URL, definition of done, and waiting-on
+- **Saved views + query DSL** — filter across inbox, actions, projects, and archive
+- **Fuzzy search in Views** — quick free-text search across task content and provenance
 - **Process Inbox mode** — guided GTD decision tree to work through inbox items one at a time
-- **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
 - **Weekly Review mode** — guided multi-section sweep for stale projects, aging waiting-for, someday/maybe, and recent archives
-- **Hybrid keybindings** — supports quick single-key actions plus two-step prefixes for grouped actions (`s` state, `r` route, `t` time)
+- **Project sub-groups** — organize large projects into named phases or milestones
+- **Project editing** — rename projects, edit metadata, and preserve file-slug behavior automatically
+- **Explicit archiving** — mark done/canceled without auto-removal; archive manually when ready
+- **Configurable keybindings and saved views** — adapt navigation and view layout to your workflow
 
-### Task Lifecycle Semantics
+## Task lifecycle semantics
 
 - `done` / `canceled` are **state changes** (what happened to the task)
 - `archive` is a **location change** (move completed/abandoned tasks out of active working lists)
@@ -26,18 +41,51 @@ Runtime data is stored in SQLite, with first-class Markdown import/export for po
 
 ## Installation
 
-Requires Go 1.25+ (project uses [mise](https://mise.jdx.dev/) to manage the Go version).
+For **v0.1.0**, `wnwn` is distributed as a **source-build install**.
+
+That means:
+- the supported install path is cloning the repository and building with Go
+- prebuilt binaries are not part of the initial public release
+- [mise](https://mise.jdx.dev/) is optional convenience for contributors and users who want the project-pinned Go toolchain
+
+### Requirements
+
+- Go 1.25+
+- Optional: [mise](https://mise.jdx.dev/) for matching the project Go toolchain
+
+### Build from source
 
 ```bash
-git clone https://github.com/yourusername/wnwn
+git clone https://github.com/chipkoziara/wnwn.git
 cd wnwn
-eval "$(mise activate bash)"   # if using mise
+
+# optional, if you use mise
+# eval "$(mise activate bash)"
+
 go build -o wnwn ./cmd/wnwn/
 ```
 
-Move `wnwn` somewhere on your `$PATH`.
+Move `wnwn` somewhere on your `$PATH`, or run it from the repo root.
 
-## Usage
+Prebuilt binaries may come in a later release, but they are not part of `v0.1.0`.
+
+
+## Quick start
+
+### First run in 60 seconds
+
+```bash
+git clone https://github.com/chipkoziara/wnwn.git
+cd wnwn
+go build -o wnwn ./cmd/wnwn/
+WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn add "Buy milk"
+WNWN_DATA_DIR=/tmp/wnwn-demo ./wnwn
+```
+
+That gives you:
+- a local build of the app
+- a throwaway demo data directory
+- one captured inbox item to process when the TUI opens
 
 ### Launch the TUI
 
@@ -45,27 +93,35 @@ Move `wnwn` somewhere on your `$PATH`.
 wnwn
 ```
 
-### Quick capture from the terminal
+### Capture tasks from the terminal
 
 ```bash
 wnwn add "Buy milk"
 wnwn add "Book flights" --deadline 2026-03-15 --tag travel --tag "@computer" --url https://flights.example.com
 wnwn add "Write report" --scheduled 2026-03-10 --notes "Focus on Q1 numbers"
-
-# URL capture examples (Chrome/Slack/etc.)
-wnwn add "Review Slack thread" --url "https://app.slack.com/client/T123/C456/thread/C456-1710000000.000100"
-wnwn add "Watch talk from Chrome tab" --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --tag "@watch"
 ```
 
-Tasks added via CLI land in your inbox for later processing and are written to your default wnwn data store (unless you override with `WNWN_DATA_DIR`).
+Tasks added via CLI land in your inbox for later processing.
+
+### A simple first workflow to try
+
+1. Launch `wnwn`
+2. Press `a` to add another inbox item, or use `wnwn add "..."` from another terminal
+3. Press `P` to enter Process Inbox mode
+4. Route one task to **Actions** and one task to a **Project**
+5. Press `Tab` or `4` to open **Views**
+6. Open **Next Actions** or run `/ state:next-action`
+7. Press `W` to preview Weekly Review mode
+
+That path exercises the app's main loop: capture → clarify → organize → review.
 
 ### Query and update from the terminal
 
 ```bash
-# Query tasks/projects using the same DSL as the Views tab (JSON by default)
+# Query tasks using the same DSL as the Views tab
 wnwn query --tasks --query "deadline:today..7d"
-wnwn query --projects --query "state:active AND tag:project"
-wnwn query --tasks --query "deadline:<today OR scheduled:<today"
+wnwn query --tasks --query "state:waiting-for AND tag:@office"
+wnwn query --projects --query "state:active"
 
 # Update a task by stable ID
 wnwn update --task-id 01ABCDEF --state done
@@ -77,9 +133,7 @@ wnwn update --project-id 01PROJECT --title "Launch Website" --state active
 wnwn update --project-id 01PROJECT --deadline 2026-06-01 --clear deadline
 ```
 
-These commands are designed to be script-friendly, which makes them useful for shell automation and local agents that need to inspect or mutate GTD state without launching the TUI.
-
-### Query DSL quick reference
+## Query DSL quick reference
 
 The query DSL powers saved views, ad-hoc `/` search in the Views tab, and `wnwn query`.
 
@@ -108,7 +162,23 @@ Supported concepts:
 - bare `@tag` shorthand
 - bare text matching across task text and notes
 
-### Markdown import/export
+## Fuzzy search
+
+From the **Views** tab:
+- press `/` for an ad-hoc DSL query
+- press `?` for fuzzy free-text search
+
+Fuzzy search ranks matches across:
+- task text
+- notes
+- tags
+- URL
+- `waiting_on`
+- source / project provenance
+
+Current limitation: fuzzy search is its own mode in the Views tab rather than a combined DSL+fuzzy pipeline.
+
+## Markdown import/export
 
 ```bash
 # Export current SQLite data to Markdown files
@@ -117,14 +187,14 @@ wnwn export-md --out /tmp/wnwn-export
 # Preview import plan without writing
 wnwn import-md --from /tmp/wnwn-export --dry-run
 
-# Merge import (adds missing tasks/projects by ID/filename)
+# Merge import (adds only missing items)
 wnwn import-md --from /tmp/wnwn-export --mode merge
 
-# Replace import (reset DB, then import all markdown data)
-wnwn import-md --from /tmp/wnwn-export --replace
+# Replace import (reset destination store, then import everything)
+wnwn import-md --from /tmp/wnwn-export --mode replace
 ```
 
-### Configuration
+## Configuration
 
 Set `WNWN_DATA_DIR` to choose where app data is stored.
 Defaults follow XDG data conventions: `$XDG_DATA_HOME/wnwn` when set, otherwise `~/.local/share/wnwn`.
@@ -139,7 +209,7 @@ Config file resolution order:
 2. `$XDG_CONFIG_HOME/wnwn/config.toml` (or `~/.config/wnwn/config.toml`)
 3. Legacy fallback: `$WNWN_DATA_DIR/config.toml`
 
-Create `~/.config/wnwn/config.toml` (or your `XDG_CONFIG_HOME` equivalent) to customize behavior:
+Example:
 
 ```toml
 [archive]
@@ -185,15 +255,17 @@ Keybinding action names supported:
 - `keys.view_results`: `done`, `cancel`, `open_url`, `someday`, `waiting`, `archive`, `restore`, `trash`, `refresh`
 - `keys.disable`: action names to disable as direct one-key shortcuts (per scope)
 
-## Keyboard Shortcuts
+## Keyboard shortcuts
 
 ### Global
 
 | Key | Action |
 |-----|--------|
-| `Tab` / `1` / `2` / `3` | Switch between Inbox, Actions, Projects |
+| `Tab` / `1` / `2` / `3` / `4` | Switch between top-level tabs/views |
 | `j` / `k` / arrows | Navigate list |
 | `g` / `G` | Jump to top / bottom |
+
+> Default tab order includes **Inbox**, **Actions**, **Projects**, and **Views**, but tabs can be reordered in config.
 
 ### Inbox
 
@@ -202,18 +274,16 @@ Keybinding action names supported:
 | `a` | Add task inline |
 | `P` | Process inbox (guided GTD decision tree) |
 | `e` | Open task detail / edit view |
-| `r` then `a` | Route to Single Actions as next action |
 | `p` | Refile to a project |
-| `s` then `m` | Set someday/maybe |
-| `s` then `d/c/w` | Set done / canceled / waiting-for |
-| `t` then `d/s` | Edit deadline / scheduled via date picker |
-| `w` | Set waiting-for |
-| `d` | Mark done (stays in list) |
-| `c` | Mark canceled (stays in list) |
+| `r` then `a` | Route to Single Actions |
+| `r` then `p` | Route to a project |
+| `s` then `m/d/c/w` | State prefix actions |
+| `t` then `d/s` | Edit deadline / scheduled |
+| `m` / `w` / `d` / `c` | Quick state changes |
 | `A` | Archive selected task |
-| `x` | Trash (permanent delete) |
+| `x` | Trash selected task |
 
-### Single Actions
+### Actions
 
 | Key | Action |
 |-----|--------|
@@ -221,62 +291,106 @@ Keybinding action names supported:
 | `p` | Refile to a project |
 | `s` then `m/d/c/w` | State prefix actions |
 | `m` / `w` / `d` / `c` | Quick state changes |
-| `t` then `d/s` | Edit deadline / scheduled via date picker |
-| `x` | Trash (permanent delete) |
+| `t` then `d/s` | Edit deadline / scheduled |
 | `A` | Archive selected task |
+| `x` | Trash selected task |
 
-### Projects
+### Projects list
 
 | Key | Action |
 |-----|--------|
 | `enter` | Open project detail |
 | `a` | Create new project |
-| `E` | Edit project metadata (title, state, tags, deadline, URL, etc.) |
+| `E` | Edit project metadata |
 
-### Project Structuring Tips
-
-- Default to a single sub-group (for example `Tasks`) for most projects.
-- Add sub-groups only when they meaningfully reflect phases/areas you actively review (for example `Research`, `Build`, `Launch`).
-- If you rarely move tasks between sub-groups, keep projects flat and use states/tags/views for organization instead.
-
-### Project Detail
+### Project detail
 
 | Key | Action |
 |-----|--------|
 | `e` | Open task detail / edit view |
+| `o` | Open selected task URL |
 | `a` | Add task to current sub-group |
 | `n` | Add new sub-group |
-| `d` | Mark task done |
-| `c` | Mark task canceled |
+| `R` | Rename selected sub-group |
+| `X` | Delete selected empty sub-group |
 | `s` then `m/d/c/w` | State prefix actions |
-| `t` then `d/s` | Edit deadline / scheduled via date picker |
+| `t` then `d/s` | Edit deadline / scheduled |
+| `d` / `c` | Mark task done / canceled |
 | `A` | Archive selected task |
-| `x` | Trash selected task (permanent delete) |
+| `x` | Trash selected task |
 | `E` | Edit project metadata |
 | `ctrl+j` / `ctrl+k` | Reorder task within sub-group |
-| `m` | Move task to a different sub-group |
+| `m` | Move task to another sub-group |
 | `esc` | Back to project list |
 
-### Views / Weekly Review
+### Views tab
 
 | Key | Action |
 |-----|--------|
-| `4` / `V` | Open Views tab |
 | `enter` | Open selected saved view |
 | `/` | Run ad-hoc DSL query |
 | `?` | Run fuzzy search |
 | `W` | Start guided Weekly Review mode |
+| `j` / `k` / `g` / `G` | Navigate the saved view list |
+
+### View results
+
+| Key | Action |
+|-----|--------|
+| `e` | Open task detail |
+| `o` | Open selected task URL |
+| `s` then `m/d/c/w` | State prefix actions |
+| `m` / `w` / `d` / `c` | Quick state changes |
+| `t` then `d/s` | Edit deadline / scheduled |
+| `A` | Archive selected task |
+| `U` | Restore selected archived task |
+| `x` | Trash selected task |
+| `R` | Refresh results |
+| `esc` | Back to Views |
+
+### Weekly Review
 
 In Weekly Review mode:
+- `h` / `l` or arrows move between sections
+- `j` / `k` / `g` / `G` navigate items in the active section
+- `enter` opens the selected item
+- `o` opens the selected task URL
+- `d` / `c` / `m` / `w`, `A`, `x` work on active tasks
+- archived items are read-only
 
-- `h`/`l` (or arrows) move between sections
-- `j`/`k` navigate items in a section
-- `enter` opens selected item (project detail or task detail)
-- `s` then `m/d/c/w` uses state prefix; `t` then `d/s` edits deadline/scheduled quickly
-- `d`/`c`/`m`/`w`, `A`, `x` still work as direct shortcuts on active (non-archived) tasks
-- archived section is read-only
+## Data locations and backup guidance
 
-## Markdown Export Format
+Default data directory:
+
+```text
+~/.local/share/wnwn/
+```
+
+Typical layout:
+
+```text
+~/.local/share/wnwn/
+  wnwn.db                # SQLite runtime store
+```
+
+Markdown export/import layout:
+
+```text
+export-dir/
+  in.md
+  single-actions.md
+  projects/
+    launch-website.md
+  archive/
+    archive.md
+```
+
+For backup and portability in `v0.1.0`, the recommended approach is:
+- keep your live data in the SQLite store under your data directory
+- periodically run `wnwn export-md --out <dir>` to create a readable Markdown snapshot
+- treat Markdown export as the current user-facing backup/interchange format
+
+## Markdown export format
 
 Imported/exported Markdown tasks use checkbox items with YAML metadata blocks:
 
@@ -293,87 +407,77 @@ Imported/exported Markdown tasks use checkbox items with YAML metadata blocks:
   Check Southwest and United for direct flights from SFO.
 ```
 
-### Data Directory Layout
+## Known limitations for v0.1.0
 
-```
-~/.local/share/wnwn/
-  in.md                  # inbox
-  single-actions.md      # standalone next actions
-  projects/              # one .md file per project
-    launch-website.md
-  archive/               # archived tasks export
-    archive.md
-```
+These are known gaps or intentionally deferred items for the first public release:
 
-### Task States
-
-| State | Checkbox | Applies to | Meaning |
-|-------|----------|------------|---------|
-| *(empty)* | `- [ ]` | Tasks | Unprocessed inbox item |
-| `next-action` | `- [ ]` | Tasks | Committed next action |
-| `active` | `- [ ]` | Projects | Project is actively being pursued |
-| `waiting-for` | `- [ ]` | Tasks & Projects | Blocked on someone or something |
-| `some-day/maybe` | `- [ ]` | Tasks & Projects | Deferred, not committed |
-| `done` | `- [x]` | Tasks & Projects | Completed |
-| `canceled` | `- [-]` | Tasks & Projects | Abandoned |
-
-Practical rule of thumb: use `canceled` when the history matters, `trash` when the task was noise/mistake, and `archive` when you're done reviewing an item in active lists.
-
-### Task Attributes
-
-| Field | Description |
-|-------|-------------|
-| `id` | ULID, auto-generated |
-| `created` | Auto-set on creation |
-| `state` | Task state (see above) |
-| `scheduled` | When you intend to work on it |
-| `deadline` | When it must be done |
-| `tags` | Contexts and categories (e.g. `@computer`, `deep-work`) |
-| `url` | Link to where the work happens |
-| `waiting_on` | Who or what you're waiting on (nudged when state is `waiting-for`) |
-| `waiting_since` | Auto-set when entering `waiting-for` state |
-| notes | Free-form Markdown prose below the YAML block |
+- No tickler-file visualization yet
+- No recurring tasks yet
+- No sync story yet
+- Fuzzy search is separate from the DSL rather than composable with it
+- Process Inbox undo steering is still an improvement area
+- `v0.1.0` is source-build only; prebuilt binaries are not included yet
 
 ## Development
 
 ```bash
+# Optional: activate Go via mise
+eval "$(mise activate bash)"
+
 # Run tests
 go test ./...
 
 # Build
 go build -o wnwn ./cmd/wnwn/
 
-# Rebuild + replace import from bundled test data
-go build -o wnwn ./cmd/wnwn/ && ./wnwn import-md --from ./testdata --replace
+# Example import into a local test store
+./wnwn import-md --from ./testdata --mode replace
 
 # Test with a throwaway data directory
 WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```
 
-The data layer has 31 passing tests covering the parser, writer, and service layer.
+## Release checklist (v0.1.0)
+
+```bash
+# verify
+go test ./...
+go test -race ./...
+
+# build
+go build -o wnwn ./cmd/wnwn/
+
+# smoke test a fresh data dir
+WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn add "release smoke test"
+WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn
+
+# verify markdown portability
+WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn export-md --out /tmp/wnwn-export
+./wnwn import-md --from /tmp/wnwn-export --dry-run
+```
+
+Before tagging a release:
+- ensure the working tree is clean
+- ensure the local `wnwn` binary is not accidentally staged
+- re-check `README.md` and `RELEASE_NOTES_v0.1.0.md` for release accuracy
+
+For current implementation details and architecture notes, see:
+- `STATUS.md`
+- `BRD.md`
+
+## Contributing
+
+Contributions are welcome. See `CONTRIBUTING.md` for setup guidance and DCO sign-off requirements.
 
 ## License
 
 Licensed under the Apache License, Version 2.0. See `LICENSE`.
 
-## Contributing
-
-Contributions are welcome. See `CONTRIBUTING.md` for setup and DCO sign-off requirements.
-
 ## Roadmap
 
-The core capture/organize/review workflow is functional. Planned next:
-
-- **Views and filtering** — text-based query DSL (`state:next-action tag:@home`, `deadline:<2026-03-07`) with saved named views
-- **Fuzzy search** — free-text search across task names, notes, and all content
-- **Weekly Review mode** — guided flow to review projects, waiting-for items, and someday/maybe
-- **Theming and advanced config** — extend config beyond behavior + keybindings (themes, default tags, saved views persistence)
-- **Tickler File** — skeuomorphic 43-folder visualization (31 days + 12 months) over the agenda view
-
-## Tech Stack
-
-- [Bubbletea v2](https://charm.land/bubbletea) — TUI framework
-- [Lipgloss v2](https://charm.land/lipgloss) — styling and layout
-- [Bubbles v2](https://charm.land/bubbles) — reusable TUI components
-- [oklog/ulid](https://github.com/oklog/ulid) — stable task IDs
-- [gopkg.in/yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) — YAML metadata parsing
+Planned or likely future work includes:
+- Tickler file visualization
+- Recurring tasks
+- Sync / durability story for multi-device use
+- Public release packaging and distribution polish
+- Additional view/result navigation improvements
