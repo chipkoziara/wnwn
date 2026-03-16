@@ -3816,7 +3816,7 @@ func (m Model) helpText() string {
 		}
 		switch m.processStep {
 		case stepActionable:
-			return "y: actionable  n: not actionable  s: skip  q: quit"
+			return ""
 		case stepNotActionable:
 			return "t: trash  esc: back"
 		case stepEnrich:
