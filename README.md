@@ -437,11 +437,12 @@ Imported/exported Markdown tasks use checkbox items with YAML metadata blocks:
 
 These are known gaps or intentionally deferred items for the first public release:
 
-- No tickler-file visualization yet
-- No recurring tasks yet
-- No sync story yet
+
+- No recurring tasks
+- No sync story (local-only)
 - Fuzzy search is separate from the DSL rather than composable with it
 - Process Inbox undo steering is still an improvement area
+- No tickler-file visualization
 - `v0.1.0` is source-build only; prebuilt binaries are not included yet
 
 ## Development
@@ -463,47 +464,6 @@ go build -o wnwn ./cmd/wnwn/
 WNWN_DATA_DIR=/tmp/wnwn-test ./wnwn
 ```
 
-## Release checklist (v0.1.0)
-
-```bash
-# verify
-go test ./...
-go test -race ./...
-
-# build
-go build -o wnwn ./cmd/wnwn/
-
-# smoke test a fresh data dir
-WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn add "release smoke test"
-WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn
-
-# verify markdown portability
-WNWN_DATA_DIR=/tmp/wnwn-release-smoke ./wnwn export-md --out /tmp/wnwn-export
-./wnwn import-md --from /tmp/wnwn-export --dry-run
-```
-
-Before tagging a release:
-- ensure the working tree is clean
-- ensure the local `wnwn` binary is not accidentally staged
-- re-check `README.md` and `RELEASE_NOTES_v0.1.0.md` for release accuracy
-
-For current implementation details and architecture notes, see:
-- `STATUS.md`
-- `BRD.md`
-
-## Contributing
-
-Contributions are welcome. See `CONTRIBUTING.md` for setup guidance and DCO sign-off requirements.
-
 ## License
 
 Licensed under the Apache License, Version 2.0. See `LICENSE`.
-
-## Roadmap
-
-Planned or likely future work includes:
-- Tickler file visualization
-- Recurring tasks
-- Sync / durability story for multi-device use
-- Public release packaging and distribution polish
-- Additional view/result navigation improvements
