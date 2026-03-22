@@ -2079,7 +2079,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Select a sub-group heading to delete"
 			return m, m.clearStatusAfter()
 		}
-		if err := m.svc.DeleteSubGroup(m.activeFilename, item.sgIdx); err != nil {
+		if err := m.core.DeleteSubgroup(m.activeProject.ID, m.activeProject.SubGroups[item.sgIdx].ID); err != nil {
 			m.statusMsg = fmt.Sprintf("Error: %v", err)
 			return m, m.clearStatusAfter()
 		}
@@ -2374,10 +2374,9 @@ func (m Model) updatePickingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeNormal
 			taskID := m.moveTaskID
 			taskText := m.moveTaskText
-			fromSgIdx := m.moveFromSgIdx
-			filename := m.activeFilename
+			targetSubgroupID := m.activeProject.SubGroups[toSgIdx].ID
 			return m, func() tea.Msg {
-				err := m.svc.MoveTaskBetweenSubGroups(filename, fromSgIdx, taskID, toSgIdx)
+				err := m.core.MoveTaskToSubgroup(taskID, targetSubgroupID)
 				if err != nil {
 					return errMsg{err}
 				}
@@ -2460,7 +2459,7 @@ func (m Model) updateAddingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeNormal
 		return m, func() tea.Msg {
-			_, err := m.svc.AddSubGroup(m.activeFilename, title)
+			_, err := m.core.CreateSubgroup(m.activeProject.ID, title)
 			if err != nil {
 				return errMsg{err}
 			}
@@ -2489,7 +2488,7 @@ func (m Model) updateRenamingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		sgIdx := m.renameSgIdx
 		m.mode = modeNormal
 		return m, func() tea.Msg {
-			if err := m.svc.RenameSubGroup(m.activeFilename, sgIdx, title); err != nil {
+			if _, err := m.core.RenameSubgroup(m.activeProject.ID, m.activeProject.SubGroups[sgIdx].ID, title); err != nil {
 				return errMsg{err}
 			}
 			return taskRefiledMsg{text: fmt.Sprintf("Renamed sub-group: %s", title)}
@@ -2517,8 +2516,9 @@ func (m Model) updateAddingProjectTask(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		m.mode = modeNormal
 		// Find which sub-group the cursor is in.
 		sgIdx := m.currentSubGroupIdx()
+		subgroupID := m.activeProject.SubGroups[sgIdx].ID
 		return m, func() tea.Msg {
-			_, err := m.svc.AddTaskToProject(m.activeFilename, sgIdx, text, model.StateNextAction)
+			_, err := m.core.AddProjectTask(m.activeProject.ID, subgroupID, text, core.CaptureOpts{})
 			if err != nil {
 				return errMsg{err}
 			}
