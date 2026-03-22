@@ -4237,16 +4237,24 @@ func (m *Model) applyProjEditFieldEdit(val string) {
 	}
 }
 
-// saveProjectEdit writes the working copy to disk via UpdateProject.
+// saveProjectEdit writes the working copy to disk via core.UpdateProject.
 func (m Model) saveProjectEdit() tea.Cmd {
 	proj := m.projEditProject
-	oldFilename := m.projEditFilename
 	return func() tea.Msg {
-		newFilename, err := m.svc.UpdateProject(oldFilename, proj)
+		patch := core.ProjectPatch{
+			Title:            stringPtr(proj.Title),
+			State:            taskStatePtr(proj.State),
+			Deadline:         proj.Deadline,
+			Tags:             slicePtr(proj.Tags),
+			URL:              stringPtr(proj.URL),
+			WaitingOn:        stringPtr(proj.WaitingOn),
+			DefinitionOfDone: stringPtr(proj.DefinitionOfDone),
+		}
+		updated, err := m.core.UpdateProject(proj.ID, patch)
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectUpdatedMsg{title: proj.Title, newFilename: newFilename}
+		return projectUpdatedMsg{title: updated.Project.Title, newFilename: updated.Filename}
 	}
 }
 
@@ -5159,6 +5167,10 @@ func (m Model) viewResultRestore() tea.Cmd {
 
 // sourceBadge returns a short muted badge string for the source of a view task.
 func stringPtr(s string) *string {
+	return &s
+}
+
+func taskStatePtr(s model.TaskState) *model.TaskState {
 	return &s
 }
 
