@@ -221,13 +221,10 @@ type Model struct {
 	scrollOffset    int                // top row offset for scrollable list-style views
 
 	// Process inbox state.
-	processSessionID string       // active core-owned process inbox session ID
-	processItems     []model.Task // snapshot of inbox tasks taken at activation
-	processIdx       int          // index of the current item being processed (0-based)
-	processStep      processStep  // current step in the decision tree
-	processTask      model.Task   // working copy of the current item (mutated during enrichment)
-	processTags      []string     // tag accumulator for stepEnrichTags (tab-separated entry)
-	processStats     processStats // running totals for the completion summary
+	processSessionID string      // active core-owned process inbox session ID
+	processStep      processStep // current step in the decision tree
+	processTask      model.Task  // current draft mirrored from the core-owned session
+	processTags      []string    // tag accumulator for stepEnrichTags (tab-separated entry)
 
 	weeklyReviewData    service.WeeklyReviewData
 	weeklyReviewStep    weeklyReviewStep
@@ -638,9 +635,9 @@ type errMsg struct{ err error }
 // processInboxLoadedMsg carries the core-owned inbox session state when entering process mode.
 type processInboxLoadedMsg struct{ session *core.InboxSession }
 
-// processAdvancedMsg signals that the current item was acted on and we should advance.
-// The action field is used to update processStats.
-type processAdvancedMsg struct{ action string }
+// processAdvancedMsg signals that the current item was acted on and the TUI
+// should refresh local presentation state from the core-owned session.
+type processAdvancedMsg struct{}
 
 type weeklyReviewLoadedMsg struct {
 	data service.WeeklyReviewData
@@ -649,6 +646,13 @@ type weeklyReviewLoadedMsg struct {
 
 type clearPrefixMsg struct{}
 type undoCountdownMsg struct{ seq int }
+
+type processViewState struct {
+	current int
+	total   int
+	summary core.InboxSessionSummary
+	done    bool
+}
 
 func stepFromCore(step core.InboxStep) processStep {
 	switch step {
@@ -668,18 +672,6 @@ func stepFromCore(step core.InboxStep) processStep {
 		return stepComplete
 	default:
 		return stepActionable
-	}
-}
-
-func processStatsFromCore(summary core.InboxSessionSummary) processStats {
-	return processStats{
-		trashed:   summary.Trashed,
-		someday:   summary.Someday,
-		done:      summary.Done,
-		waiting:   summary.Waiting,
-		refiled:   summary.Refiled,
-		toProject: summary.ToProject,
-		skipped:   summary.Skipped,
 	}
 }
 
@@ -703,11 +695,24 @@ func (m *Model) applyProcessSession(session *core.InboxSession) {
 		return
 	}
 	m.processSessionID = session.ID
-	m.processItems = session.Items
-	m.processIdx = session.Index
 	m.processStep = stepFromCore(session.Current.Step)
 	m.processTask = session.Current.Draft
-	m.processStats = processStatsFromCore(session.Summary)
+}
+
+func (m Model) processViewState() processViewState {
+	if m.processSessionID == "" {
+		return processViewState{}
+	}
+	session, err := m.core.GetInboxSession(m.processSessionID)
+	if err != nil || session == nil {
+		return processViewState{}
+	}
+	return processViewState{
+		current: session.Progress.Current,
+		total:   session.Progress.Total,
+		summary: session.Summary,
+		done:    session.Done,
+	}
 }
 
 func (m *Model) updateProcessDraft(patch core.TaskPatch) {
@@ -721,33 +726,13 @@ func (m *Model) updateProcessDraft(patch core.TaskPatch) {
 	m.applyProcessSession(session)
 }
 
-func processActionLabel(kind core.InboxDecisionKind) string {
-	switch kind {
-	case core.InboxDecisionTrash:
-		return "trashed"
-	case core.InboxDecisionDone:
-		return "done"
-	case core.InboxDecisionSomeday:
-		return "someday"
-	case core.InboxDecisionWaiting:
-		return "waiting"
-	case core.InboxDecisionSingleAction:
-		return "refiled"
-	case core.InboxDecisionProject, core.InboxDecisionNewProject:
-		return "toProject"
-	default:
-		return ""
-	}
-}
-
 func (m Model) commitProcessDecision(decision core.InboxDecision) tea.Cmd {
 	return func() tea.Msg {
-		session, err := m.core.CommitInboxDecision(m.processSessionID, decision)
+		_, err := m.core.CommitInboxDecision(m.processSessionID, decision)
 		if err != nil {
 			return errMsg{err}
 		}
-		_ = session
-		return processAdvancedMsg{action: processActionLabel(decision.Kind)}
+		return processAdvancedMsg{}
 	}
 }
 
@@ -880,23 +865,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case processAdvancedMsg:
-		// Update stats.
-		switch msg.action {
-		case "trashed":
-			m.processStats.trashed++
-		case "someday":
-			m.processStats.someday++
-		case "done":
-			m.processStats.done++
-		case "waiting":
-			m.processStats.waiting++
-		case "refiled":
-			m.processStats.refiled++
-		case "toProject":
-			m.processStats.toProject++
-		case "skipped":
-			m.processStats.skipped++
-		}
 		m.advanceProcessInbox()
 		return m, nil
 
@@ -1591,13 +1559,7 @@ func (m *Model) advanceProcessInbox() {
 			return
 		}
 	}
-	m.processIdx++
-	if m.processIdx >= len(m.processItems) {
-		m.processStep = stepComplete
-		return
-	}
-	m.processStep = stepActionable
-	m.processTask = m.processItems[m.processIdx]
+	m.processStep = stepComplete
 	m.processTags = nil
 }
 
@@ -1657,8 +1619,6 @@ func (m Model) updateProcessStepActionable(msg tea.KeyPressMsg) (tea.Model, tea.
 	case "n":
 		m.processStep = stepNotActionable
 	case "s":
-		// Skip: leave item in inbox, advance.
-		m.processStats.skipped++
 		m.advanceProcessInbox()
 	case "q", "esc":
 		// Quit process inbox, return to inbox view.
@@ -1740,7 +1700,6 @@ func (m Model) updateProcessStepEnrich(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	case "esc":
 		// Back to actionable step; revert working copy.
 		m.processStep = stepActionable
-		m.processTask = m.processItems[m.processIdx]
 	}
 	return m, nil
 }
@@ -3567,10 +3526,11 @@ func (m Model) saveDetailTask() tea.Cmd {
 // modePickingProject) those renderers take priority via the View() switch, so
 // this function only runs in modeNormal.
 func (m Model) renderProcessInbox(b *strings.Builder) {
-	total := len(m.processItems)
+	state := m.processViewState()
+	total := state.total
 
 	// ── Completion screen ───────────────────────────────────────────────────
-	if m.processStep == stepComplete {
+	if m.processStep == stepComplete || state.done {
 		b.WriteString(projectTitleStyle.Render("Inbox Processed!"))
 		b.WriteString("\n\n")
 		b.WriteString(fmt.Sprintf("  %d items reviewed\n\n", total))
@@ -3579,13 +3539,13 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 			n     int
 		}
 		rows := []row{
-			{"Trashed", m.processStats.trashed},
-			{"Someday/Maybe", m.processStats.someday},
-			{"Done (<2 min)", m.processStats.done},
-			{"Waiting For", m.processStats.waiting},
-			{"Single Actions", m.processStats.refiled},
-			{"To Projects", m.processStats.toProject},
-			{"Skipped", m.processStats.skipped},
+			{"Trashed", state.summary.Trashed},
+			{"Someday/Maybe", state.summary.Someday},
+			{"Done (<2 min)", state.summary.Done},
+			{"Waiting For", state.summary.Waiting},
+			{"Single Actions", state.summary.Refiled},
+			{"To Projects", state.summary.ToProject},
+			{"Skipped", state.summary.Skipped},
 		}
 		for _, r := range rows {
 			b.WriteString(stateStyle.Render(fmt.Sprintf("  %-16s %d\n", r.label+":", r.n)))
@@ -3597,7 +3557,7 @@ func (m Model) renderProcessInbox(b *strings.Builder) {
 	}
 
 	// ── Progress header ─────────────────────────────────────────────────────
-	current := m.processIdx + 1
+	current := state.current
 	header := fmt.Sprintf("Process Inbox  (%d of %d)", current, total)
 	b.WriteString(projectTitleStyle.Render(header))
 	b.WriteString("\n\n")
@@ -3852,8 +3812,9 @@ func (m Model) renderTabBar() string {
 		}
 
 		if m.view == viewProcessInbox && tab.Kind == tabInbox {
-			label = fmt.Sprintf(" Processing Inbox (%d of %d) ", m.processIdx+1, len(m.processItems))
-			if m.processStep == stepComplete {
+			pv := m.processViewState()
+			label = fmt.Sprintf(" Processing Inbox (%d of %d) ", pv.current, pv.total)
+			if m.processStep == stepComplete || pv.done {
 				label = " Inbox Processed! "
 			}
 		}
