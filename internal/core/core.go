@@ -59,9 +59,11 @@ type ViewService interface {
 	ListViews() []model.SavedView
 	RunView(name string) ([]service.ViewTask, error)
 	RunQuery(input QueryInput) ([]service.ViewTask, error)
+	CollectViewTasks(includeArchived bool) ([]service.ViewTask, error)
 }
 type ReviewService interface {
 	WeeklyReview(now time.Time) (service.WeeklyReviewData, error)
+	ListProjects() ([]service.ProjectSummary, error)
 }
 type ImportExportService interface {
 	ImportMarkdown(input ImportInput) (ImportResult, error)
@@ -603,6 +605,22 @@ func (c *Core) RunView(name string) ([]service.ViewTask, error) {
 	return nil, fmt.Errorf("saved view %q not found", name)
 }
 
+// CollectViewTasks returns aggregated active tasks, optionally including archives.
+func (c *Core) CollectViewTasks(includeArchived bool) ([]service.ViewTask, error) {
+	all, err := c.svc.CollectAllTasks()
+	if err != nil {
+		return nil, err
+	}
+	if !includeArchived {
+		return all, nil
+	}
+	archived, err := c.svc.CollectArchiveTasks()
+	if err != nil {
+		return nil, err
+	}
+	return append(all, archived...), nil
+}
+
 // RunQuery executes an ad-hoc query over active tasks plus optional archive tasks.
 func (c *Core) RunQuery(input QueryInput) ([]service.ViewTask, error) {
 	expr, err := query.Parse(strings.TrimSpace(input.Query), time.Now())
@@ -610,16 +628,9 @@ func (c *Core) RunQuery(input QueryInput) ([]service.ViewTask, error) {
 		return nil, err
 	}
 
-	all, err := c.svc.CollectAllTasks()
+	all, err := c.CollectViewTasks(input.IncludeArchived)
 	if err != nil {
 		return nil, err
-	}
-	if input.IncludeArchived {
-		archived, err := c.svc.CollectArchiveTasks()
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, archived...)
 	}
 
 	if expr == nil {
@@ -657,10 +668,15 @@ func (c *Core) CreateProject(title, initialSubgroupTitle string) (ProjectLocatio
 	return *loc, nil
 }
 
-// ListProjectSummaries returns the legacy project summaries for picker/list use
-// while the extraction is still in progress.
-func (c *Core) ListProjectSummaries() ([]service.ProjectSummary, error) {
+// ListProjects returns project summaries for picker/list use.
+func (c *Core) ListProjects() ([]service.ProjectSummary, error) {
 	return c.svc.ListProjects()
+}
+
+// ListProjectSummaries returns project summaries for picker/list use.
+// Deprecated transitional alias; prefer ListProjects.
+func (c *Core) ListProjectSummaries() ([]service.ProjectSummary, error) {
+	return c.ListProjects()
 }
 
 // QueryProjects runs the shared query DSL over projects by projecting project metadata

@@ -982,7 +982,7 @@ func (m Model) loadProjects() tea.Msg {
 	if err := m.store.Init(); err != nil {
 		return errMsg{err}
 	}
-	projects, err := m.svc.ListProjects()
+	projects, err := m.core.ListProjects()
 	if err != nil {
 		return errMsg{err}
 	}
@@ -993,7 +993,7 @@ func (m Model) loadWeeklyReview() tea.Msg {
 	if err := m.store.Init(); err != nil {
 		return weeklyReviewLoadedMsg{err: err}
 	}
-	data, err := m.svc.WeeklyReview(time.Now())
+	data, err := m.core.WeeklyReview(time.Now())
 	if err != nil {
 		return weeklyReviewLoadedMsg{err: err}
 	}
@@ -1004,7 +1004,7 @@ func (m Model) loadWeeklyReview() tea.Msg {
 // Used when entering the detail view for the first time.
 func (m Model) loadProjectDetail(filename string) tea.Cmd {
 	return func() tea.Msg {
-		proj, err := m.svc.GetProject(filename)
+		proj, err := m.store.ReadProject(filename)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -1017,7 +1017,7 @@ func (m Model) loadProjectDetail(filename string) tea.Cmd {
 func (m Model) reloadProjectDetail() tea.Cmd {
 	filename := m.activeFilename
 	return func() tea.Msg {
-		proj, err := m.svc.GetProject(filename)
+		proj, err := m.store.ReadProject(filename)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -4054,7 +4054,7 @@ func (m Model) helpText() string {
 // openProjectEdit loads a project from disk into the working copy and switches to viewProjectEdit.
 func (m Model) openProjectEdit(filename string, fromView viewState) tea.Cmd {
 	return func() tea.Msg {
-		proj, err := m.svc.GetProject(filename)
+		proj, err := m.store.ReadProject(filename)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -4378,22 +4378,9 @@ func (m Model) runFuzzyQuery(name, needle string, includeArchived bool) tea.Cmd 
 
 func (m Model) collectViewTasks(name string, includeArchived bool) ([]service.ViewTask, error) {
 	if strings.EqualFold(name, "Archives") {
-		return m.svc.CollectArchiveTasks()
+		return m.core.CollectViewTasks(true)
 	}
-
-	all, err := m.svc.CollectAllTasks()
-	if err != nil {
-		return nil, err
-	}
-	if !includeArchived {
-		return all, nil
-	}
-
-	archived, err := m.svc.CollectArchiveTasks()
-	if err != nil {
-		return nil, err
-	}
-	return append(all, archived...), nil
+	return m.core.CollectViewTasks(includeArchived)
 }
 
 func weeklyStepTitle(step weeklyReviewStep) string {
