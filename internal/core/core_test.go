@@ -607,6 +607,20 @@ func TestInboxSessionLifecycle(t *testing.T) {
 		t.Fatalf("unexpected current item: %+v", session.Current)
 	}
 
+	updatedText := "First updated"
+	note := "Captured note"
+	tags := []string{"@computer", "deep-work"}
+	updatedSession, err := c.UpdateInboxDraft(session.ID, TaskPatch{Text: &updatedText, Notes: &note, Tags: &tags})
+	if err != nil {
+		t.Fatalf("update draft: %v", err)
+	}
+	if updatedSession.Current.Draft.Text != updatedText || updatedSession.Current.Draft.Notes != note {
+		t.Fatalf("unexpected updated draft: %+v", updatedSession.Current.Draft)
+	}
+	if len(updatedSession.Current.Draft.Tags) != 2 || updatedSession.Current.Original.Text != "First" {
+		t.Fatalf("expected original item preserved and draft tags updated: %+v", updatedSession.Current)
+	}
+
 	next, err := c.SkipInboxItem(session.ID)
 	if err != nil {
 		t.Fatalf("skip item: %v", err)

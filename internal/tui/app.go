@@ -683,6 +683,44 @@ func processStatsFromCore(summary core.InboxSessionSummary) processStats {
 	}
 }
 
+func taskPatchStringPtr(val string) *string {
+	v := val
+	return &v
+}
+
+func taskPatchTimePtr(val time.Time) *time.Time {
+	v := val
+	return &v
+}
+
+func taskPatchStringSlicePtr(vals []string) *[]string {
+	v := append([]string(nil), vals...)
+	return &v
+}
+
+func (m *Model) applyProcessSession(session *core.InboxSession) {
+	if session == nil {
+		return
+	}
+	m.processSessionID = session.ID
+	m.processItems = session.Items
+	m.processIdx = session.Index
+	m.processStep = stepFromCore(session.Current.Step)
+	m.processTask = session.Current.Draft
+	m.processStats = processStatsFromCore(session.Summary)
+}
+
+func (m *Model) updateProcessDraft(patch core.TaskPatch) {
+	if m.processSessionID == "" {
+		return
+	}
+	session, err := m.core.UpdateInboxDraft(m.processSessionID, patch)
+	if err != nil {
+		return
+	}
+	m.applyProcessSession(session)
+}
+
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -806,12 +844,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Inbox is empty — nothing to process"
 			return m, m.clearStatusAfter()
 		}
-		m.processSessionID = msg.session.ID
-		m.processItems = msg.session.Items
-		m.processIdx = msg.session.Index
-		m.processStep = stepFromCore(msg.session.Current.Step)
-		m.processTask = msg.session.Current.Draft
-		m.processStats = processStatsFromCore(msg.session.Summary)
+		m.applyProcessSession(msg.session)
 		m.view = viewProcessInbox
 		m.currentList = model.ListIn
 		return m, nil
@@ -1523,11 +1556,7 @@ func (m *Model) advanceProcessInbox() {
 	if m.processSessionID != "" {
 		session, err := m.core.SkipInboxItem(m.processSessionID)
 		if err == nil {
-			m.processItems = session.Items
-			m.processIdx = session.Index
-			m.processStep = stepFromCore(session.Current.Step)
-			m.processTask = session.Current.Draft
-			m.processStats = processStatsFromCore(session.Summary)
+			m.applyProcessSession(session)
 			m.processTags = nil
 			return
 		}
@@ -1731,7 +1760,7 @@ func (m Model) updateProcessStepEnrichTags(msg tea.KeyPressMsg) (tea.Model, tea.
 		if tag != "" {
 			m.processTags = append(m.processTags, tag)
 		}
-		m.processTask.Tags = m.processTags
+		m.updateProcessDraft(core.TaskPatch{Tags: taskPatchStringSlicePtr(m.processTags)})
 		m.processStep = stepEnrich
 		m.mode = modeNormal
 
@@ -1824,7 +1853,7 @@ func (m Model) updateProcessStepWaitingOn(msg tea.KeyPressMsg) (tea.Model, tea.C
 	switch msg.String() {
 	case "enter":
 		waitingOn := strings.TrimSpace(m.input.Value())
-		m.processTask.WaitingOn = waitingOn
+		m.updateProcessDraft(core.TaskPatch{WaitingOn: taskPatchStringPtr(waitingOn)})
 		task := m.processTask
 		return m, func() tea.Msg {
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
@@ -3263,12 +3292,11 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			picked = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 		}
 		if m.view == viewProcessInbox {
-			// Write back into the process inbox working copy.
 			switch m.datePickerField {
 			case fieldDeadline:
-				m.processTask.Deadline = &picked
+				m.updateProcessDraft(core.TaskPatch{Deadline: taskPatchTimePtr(picked)})
 			case fieldScheduled:
-				m.processTask.Scheduled = &picked
+				m.updateProcessDraft(core.TaskPatch{Scheduled: taskPatchTimePtr(picked)})
 			}
 		} else if m.view == viewProjectEdit {
 			// Write back into the project edit working copy.
@@ -3292,9 +3320,9 @@ func (m Model) updatePickingDate(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.view == viewProcessInbox {
 			switch m.datePickerField {
 			case fieldDeadline:
-				m.processTask.Deadline = nil
+				m.updateProcessDraft(core.TaskPatch{Clear: []string{"deadline"}})
 			case fieldScheduled:
-				m.processTask.Scheduled = nil
+				m.updateProcessDraft(core.TaskPatch{Clear: []string{"scheduled"}})
 			}
 		} else if m.view == viewProjectEdit {
 			m.projEditProject.Deadline = nil
@@ -3527,12 +3555,12 @@ func (m *Model) applyProcessFieldEdit(val string) {
 	switch m.detailField {
 	case fieldText:
 		if val != "" {
-			m.processTask.Text = val
+			m.updateProcessDraft(core.TaskPatch{Text: taskPatchStringPtr(val)})
 		}
 	case fieldNotes:
-		m.processTask.Notes = val
+		m.updateProcessDraft(core.TaskPatch{Notes: taskPatchStringPtr(val)})
 	case fieldWaitingOn:
-		m.processTask.WaitingOn = val
+		m.updateProcessDraft(core.TaskPatch{WaitingOn: taskPatchStringPtr(val)})
 	}
 }
 

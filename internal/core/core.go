@@ -45,6 +45,7 @@ type ProjectService interface {
 type InboxSessionService interface {
 	StartInboxSession() (*InboxSession, error)
 	GetInboxSession(sessionID string) (*InboxSession, error)
+	UpdateInboxDraft(sessionID string, patch TaskPatch) (*InboxSession, error)
 	SkipInboxItem(sessionID string) (*InboxSession, error)
 	DiscardInboxSession(sessionID string) error
 }
@@ -206,6 +207,21 @@ func (c *Core) GetInboxSession(sessionID string) (*InboxSession, error) {
 	copy := *session
 	copy.Items = cloneTasks(session.Items)
 	return &copy, nil
+}
+
+// UpdateInboxDraft applies a patch to the current draft in an inbox session.
+func (c *Core) UpdateInboxDraft(sessionID string, patch TaskPatch) (*InboxSession, error) {
+	session, ok := c.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("inbox session %q not found", sessionID)
+	}
+	if session.Done {
+		return c.GetInboxSession(sessionID)
+	}
+	draft := session.Current.Draft
+	applyTaskPatch(&draft, patch)
+	session.Current.Draft = draft
+	return c.GetInboxSession(sessionID)
 }
 
 // SkipInboxItem advances the session to the next item without mutating storage.
