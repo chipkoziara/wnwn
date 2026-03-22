@@ -2210,7 +2210,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				err := m.svc.ReorderTaskInSubGroup(m.activeFilename, item.sgIdx, item.task.ID, -1)
+				err := m.core.ReorderProjectTask(item.task.ID, -1)
 				if err == nil {
 					m.projCursor--
 					if m.projCursor < 0 {
@@ -2226,7 +2226,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				err := m.svc.ReorderTaskInSubGroup(m.activeFilename, item.sgIdx, item.task.ID, 1)
+				err := m.core.ReorderProjectTask(item.task.ID, 1)
 				if err == nil {
 					m.projCursor++
 					if m.projCursor >= len(flatItems) {

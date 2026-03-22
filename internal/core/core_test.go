@@ -510,6 +510,17 @@ func TestProjectAndSubgroupCoreAPIs(t *testing.T) {
 		t.Fatalf("expected moved task in target subgroup, got %+v", moved)
 	}
 
+	if err := c.ReorderProjectTask(added.Task.ID, -1); err != nil {
+		t.Fatalf("reorder project task: %v", err)
+	}
+	reorderedProject, err := c.GetProject(proj.ID)
+	if err != nil {
+		t.Fatalf("get reordered project: %v", err)
+	}
+	if reorderedProject.Project.SubGroups[1].Tasks[0].ID != added.Task.ID {
+		t.Fatalf("expected reordered task to move earlier within subgroup")
+	}
+
 	if err := c.DeleteSubgroup(proj.ID, sg.Subgroup.ID); err != nil {
 		t.Fatalf("delete empty subgroup: %v", err)
 	}

@@ -42,6 +42,7 @@ type ProjectService interface {
 	DeleteSubgroup(projectID, subgroupID string) error
 	AddProjectTask(projectID, subgroupID, text string, opts CaptureOpts) (TaskLocation, error)
 	MoveTaskToSubgroup(taskID, subgroupID string) error
+	ReorderProjectTask(taskID string, delta int) error
 }
 type InboxSessionService interface {
 	StartInboxSession() (*InboxSession, error)
@@ -1171,6 +1172,18 @@ func (c *Core) MoveTaskToSubgroup(taskID, subgroupID string) error {
 		return err
 	}
 	return c.svc.MoveTaskBetweenSubGroups(taskLoc.Filename, taskLoc.SubgroupIx, taskID, target.SubgroupIx)
+}
+
+// ReorderProjectTask reorders a project task within its current subgroup using a stable task ID.
+func (c *Core) ReorderProjectTask(taskID string, delta int) error {
+	loc, err := c.ResolveTask(taskID)
+	if err != nil {
+		return err
+	}
+	if loc.Kind != TaskLocationProject {
+		return fmt.Errorf("task %s is not a project task", taskID)
+	}
+	return c.svc.ReorderTaskInSubGroup(loc.Filename, loc.SubgroupIx, taskID, delta)
 }
 
 // RestoreTrashedTask restores a just-trashed raw task payload back to the given source.
