@@ -1065,25 +1065,29 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			task := m.list.Tasks[m.cursor]
 			switch raw {
 			case "d":
-				if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateDone); err != nil {
+				newState := model.StateDone
+				if _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := task.State
 				undoTick := m.setUndo(
 					"Task marked done",
-					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+					func() error { _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.loadCurrentList,
 					fmt.Sprintf("Restored: %s", task.Text),
 				)
 				return m, tea.Batch(m.loadCurrentList, undoTick, m.clearStatusAfter())
 			case "c":
-				if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled); err != nil {
+				newState := model.StateCanceled
+				if _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := task.State
 				undoTick := m.setUndo(
 					"Task canceled",
-					func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+					func() error { _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.loadCurrentList,
 					fmt.Sprintf("Restored: %s", task.Text),
 				)
@@ -1316,13 +1320,15 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateDone); err != nil {
+			newState := model.StateDone
+			if _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &newState}); err != nil {
 				m.statusMsg = fmt.Sprintf("Error: %v", err)
 				return m, m.clearStatusAfter()
 			}
+			oldState := task.State
 			undoTick := m.setUndo(
 				"Task marked done",
-				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+				func() error { _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &oldState}); return err },
 				m.loadCurrentList,
 				fmt.Sprintf("Restored: %s", task.Text),
 			)
@@ -1336,13 +1342,15 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			if err := m.svc.UpdateState(m.list.Type, task.ID, model.StateCanceled); err != nil {
+			newState := model.StateCanceled
+			if _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &newState}); err != nil {
 				m.statusMsg = fmt.Sprintf("Error: %v", err)
 				return m, m.clearStatusAfter()
 			}
+			oldState := task.State
 			undoTick := m.setUndo(
 				"Task canceled",
-				func() error { return m.svc.UpdateState(m.list.Type, task.ID, task.State) },
+				func() error { _, err := m.core.UpdateTask(task.ID, core.TaskPatch{State: &oldState}); return err },
 				m.loadCurrentList,
 				fmt.Sprintf("Restored: %s", task.Text),
 			)
@@ -1356,14 +1364,14 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			if err := m.svc.ArchiveTask(m.list.Type, task.ID); err != nil {
+			if err := m.core.ArchiveTask(task.ID); err != nil {
 				m.statusMsg = fmt.Sprintf("Error: %v", err)
 				return m, m.clearStatusAfter()
 			}
 			undoTick := m.setUndo(
 				"Task archived",
 				func() error {
-					_, err := m.svc.RestoreArchivedTask(task.ID)
+					_, err := m.core.RestoreTask(task.ID)
 					return err
 				},
 				m.loadCurrentList,
@@ -1379,7 +1387,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.list != nil && len(m.list.Tasks) > 0 {
 			task := m.list.Tasks[m.cursor]
-			if err := m.svc.TrashTask(m.list.Type, task.ID); err != nil {
+			if err := m.core.TrashTask(task.ID); err != nil {
 				m.statusMsg = fmt.Sprintf("Error: %v", err)
 				return m, m.clearStatusAfter()
 			}
