@@ -29,6 +29,7 @@ type TaskService interface {
 	ArchiveTask(taskID string) error
 	RestoreTask(taskID string) (TaskLocation, error)
 	TrashTask(taskID string) error
+	RestoreTrashedTask(task model.Task, source string) (TaskLocation, error)
 	MoveTaskToList(taskID string, toList model.ListType, newState model.TaskState) (TaskLocation, error)
 	MoveTaskToProject(taskID string, projectID, subgroupID string, newState model.TaskState) (TaskLocation, error)
 }
@@ -1170,6 +1171,21 @@ func (c *Core) MoveTaskToSubgroup(taskID, subgroupID string) error {
 		return err
 	}
 	return c.svc.MoveTaskBetweenSubGroups(taskLoc.Filename, taskLoc.SubgroupIx, taskID, target.SubgroupIx)
+}
+
+// RestoreTrashedTask restores a just-trashed raw task payload back to the given source.
+// This is a transitional bridge for undo flows that still hold a pre-trash task copy.
+func (c *Core) RestoreTrashedTask(task model.Task, source string) (TaskLocation, error) {
+	label, err := c.svc.RestoreTask(task, source)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	_ = label
+	loc, err := c.ResolveTask(task.ID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	return *loc, nil
 }
 
 // MoveTaskToList moves a task by stable ID into a destination list with the requested state.

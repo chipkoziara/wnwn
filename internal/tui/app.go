@@ -1460,7 +1460,7 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			undoTick := m.setUndo(
 				"Task trashed",
 				func() error {
-					_, err := m.svc.RestoreTask(task, string(m.list.Type))
+					_, err := m.core.RestoreTrashedTask(task, string(m.list.Type))
 					return err
 				},
 				m.loadCurrentList,
@@ -2195,7 +2195,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				undoTick := m.setUndo(
 					"Task trashed",
 					func() error {
-						_, err := m.svc.RestoreTask(item.task, source)
+						_, err := m.core.RestoreTrashedTask(item.task, source)
 						return err
 					},
 					m.reloadProjectDetail(),
