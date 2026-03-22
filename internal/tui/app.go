@@ -1453,8 +1453,8 @@ func (m Model) setStateSomeday(taskID, text string) tea.Cmd {
 				return errMsg{err}
 			}
 		} else {
-			err := m.svc.UpdateState(m.currentList, taskID, model.StateSomeday)
-			if err != nil {
+			newState := model.StateSomeday
+			if _, err := m.core.UpdateTask(taskID, core.TaskPatch{State: &newState}); err != nil {
 				return errMsg{err}
 			}
 		}
@@ -1472,8 +1472,8 @@ func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
 				return errMsg{err}
 			}
 		} else {
-			err := m.svc.UpdateState(m.currentList, taskID, model.StateWaitingFor)
-			if err != nil {
+			newState := model.StateWaitingFor
+			if _, err := m.core.UpdateTask(taskID, core.TaskPatch{State: &newState}); err != nil {
 				return errMsg{err}
 			}
 		}
