@@ -451,4 +451,71 @@ func TestArchiveRestoreAndTrashByTaskID(t *testing.T) {
 	}
 }
 
+func TestProjectAndSubgroupCoreAPIs(t *testing.T) {
+	c := newTestCore(t)
+	proj := &model.Project{
+		Title: "Roadmap",
+		ID:    id.New(),
+		State: model.StateActive,
+		Tags:  []string{"project"},
+		SubGroups: []model.SubGroup{
+			{Title: "Now", ID: id.New(), Tasks: []model.Task{{ID: id.New(), Created: time.Now(), Text: "Task A", State: model.StateNextAction}}},
+			{Title: "Later", ID: id.New()},
+		},
+	}
+	if err := c.store.WriteProject(proj); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+
+	got, err := c.GetProject(proj.ID)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if got.Project.Title != "Roadmap" || got.Filename == "" {
+		t.Fatalf("unexpected get project result: %+v", got)
+	}
+
+	sg, err := c.CreateSubgroup(proj.ID, "Maybe")
+	if err != nil {
+		t.Fatalf("create subgroup: %v", err)
+	}
+	if sg.Subgroup.Title != "Maybe" {
+		t.Fatalf("unexpected created subgroup: %+v", sg)
+	}
+
+	renamed, err := c.RenameSubgroup(proj.ID, proj.SubGroups[1].ID, "Next")
+	if err != nil {
+		t.Fatalf("rename subgroup: %v", err)
+	}
+	if renamed.Subgroup.Title != "Next" {
+		t.Fatalf("unexpected renamed subgroup: %+v", renamed)
+	}
+
+	added, err := c.AddProjectTask(proj.ID, proj.SubGroups[1].ID, "Task B", CaptureOpts{Notes: "note", URL: "https://example.com", Tags: []string{"@computer"}})
+	if err != nil {
+		t.Fatalf("add project task: %v", err)
+	}
+	if added.Kind != TaskLocationProject || added.Task.URL != "https://example.com" || added.Task.Notes != "note" {
+		t.Fatalf("unexpected added project task: %+v", added)
+	}
+
+	if err := c.MoveTaskToSubgroup(proj.SubGroups[0].Tasks[0].ID, proj.SubGroups[1].ID); err != nil {
+		t.Fatalf("move task to subgroup: %v", err)
+	}
+	moved, err := c.ResolveTask(proj.SubGroups[0].Tasks[0].ID)
+	if err != nil {
+		t.Fatalf("resolve moved task: %v", err)
+	}
+	if moved.SubgroupID != proj.SubGroups[1].ID {
+		t.Fatalf("expected moved task in target subgroup, got %+v", moved)
+	}
+
+	if err := c.DeleteSubgroup(proj.ID, sg.Subgroup.ID); err != nil {
+		t.Fatalf("delete empty subgroup: %v", err)
+	}
+	if _, err := c.ResolveSubgroup(proj.ID, sg.Subgroup.ID); err == nil {
+		t.Fatalf("expected deleted subgroup to be gone")
+	}
+}
+
 func timePtr(t time.Time) *time.Time { return &t }

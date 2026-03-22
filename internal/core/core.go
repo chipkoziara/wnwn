@@ -30,8 +30,14 @@ type TaskService interface {
 	TrashTask(taskID string) error
 }
 type ProjectService interface {
+	GetProject(projectID string) (ProjectLocation, error)
 	UpdateProject(projectID string, patch ProjectPatch) (ProjectLocation, error)
 	QueryProjects(input QueryInput) ([]ProjectLocation, error)
+	CreateSubgroup(projectID, title string) (SubgroupLocation, error)
+	RenameSubgroup(projectID, subgroupID, title string) (SubgroupLocation, error)
+	DeleteSubgroup(projectID, subgroupID string) error
+	AddProjectTask(projectID, subgroupID, text string, opts CaptureOpts) (TaskLocation, error)
+	MoveTaskToSubgroup(taskID, subgroupID string) error
 }
 type InboxService interface{}
 type ViewService interface {
@@ -342,6 +348,15 @@ func (c *Core) RunQuery(input QueryInput) ([]service.ViewTask, error) {
 		}
 	}
 	return results, nil
+}
+
+// GetProject resolves and returns a project by stable project ID.
+func (c *Core) GetProject(projectID string) (ProjectLocation, error) {
+	loc, err := c.ResolveProject(projectID)
+	if err != nil {
+		return ProjectLocation{}, err
+	}
+	return *loc, nil
 }
 
 // QueryProjects runs the shared query DSL over projects by projecting project metadata
@@ -760,6 +775,113 @@ func containsNormalizedField(fields []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// CreateSubgroup adds a subgroup to a project identified by stable project ID.
+func (c *Core) CreateSubgroup(projectID, title string) (SubgroupLocation, error) {
+	pl, err := c.ResolveProject(projectID)
+	if err != nil {
+		return SubgroupLocation{}, err
+	}
+	sg, err := c.svc.AddSubGroup(pl.Filename, title)
+	if err != nil {
+		return SubgroupLocation{}, err
+	}
+	return SubgroupLocation{ProjectID: pl.ProjectID, Filename: pl.Filename, Project: pl.Project, Subgroup: *sg, SubgroupIx: len(pl.Project.SubGroups)}, nil
+}
+
+// RenameSubgroup renames a subgroup using stable project/subgroup IDs.
+func (c *Core) RenameSubgroup(projectID, subgroupID, title string) (SubgroupLocation, error) {
+	loc, err := c.ResolveSubgroup(projectID, subgroupID)
+	if err != nil {
+		return SubgroupLocation{}, err
+	}
+	if err := c.svc.RenameSubGroup(loc.Filename, loc.SubgroupIx, title); err != nil {
+		return SubgroupLocation{}, err
+	}
+	updated, err := c.ResolveSubgroup(projectID, subgroupID)
+	if err != nil {
+		return SubgroupLocation{}, err
+	}
+	return *updated, nil
+}
+
+// DeleteSubgroup deletes an empty subgroup using stable project/subgroup IDs.
+func (c *Core) DeleteSubgroup(projectID, subgroupID string) error {
+	loc, err := c.ResolveSubgroup(projectID, subgroupID)
+	if err != nil {
+		return err
+	}
+	return c.svc.DeleteSubGroup(loc.Filename, loc.SubgroupIx)
+}
+
+// AddProjectTask adds a task to a subgroup using stable project/subgroup IDs.
+func (c *Core) AddProjectTask(projectID, subgroupID, text string, opts CaptureOpts) (TaskLocation, error) {
+	loc, err := c.ResolveSubgroup(projectID, subgroupID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	state := model.StateNextAction
+	if opts.WaitingOn != "" {
+		state = model.StateWaitingFor
+	}
+	task, err := c.svc.AddTaskToProject(loc.Filename, loc.SubgroupIx, text, state)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	hasPatch := false
+	patch := TaskPatch{}
+	if opts.Deadline != nil {
+		hasPatch = true
+		patch.Deadline = opts.Deadline
+	}
+	if opts.Scheduled != nil {
+		hasPatch = true
+		patch.Scheduled = opts.Scheduled
+	}
+	if len(opts.Tags) > 0 {
+		hasPatch = true
+		tags := append([]string(nil), opts.Tags...)
+		patch.Tags = &tags
+	}
+	if opts.URL != "" {
+		hasPatch = true
+		patch.URL = &opts.URL
+	}
+	if opts.Notes != "" {
+		hasPatch = true
+		patch.Notes = &opts.Notes
+	}
+	if opts.WaitingOn != "" {
+		hasPatch = true
+		patch.WaitingOn = &opts.WaitingOn
+	}
+	if hasPatch {
+		if _, err := c.UpdateTask(task.ID, patch); err != nil {
+			return TaskLocation{}, err
+		}
+	}
+	resolved, err := c.ResolveTask(task.ID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	return *resolved, nil
+}
+
+// MoveTaskToSubgroup moves a project task between subgroups using stable IDs.
+func (c *Core) MoveTaskToSubgroup(taskID, subgroupID string) error {
+	taskLoc, err := c.ResolveTask(taskID)
+	if err != nil {
+		return err
+	}
+	if taskLoc.Kind != TaskLocationProject {
+		return fmt.Errorf("task %s is not a project task", taskID)
+	}
+	target, err := c.ResolveSubgroup(taskLoc.ProjectID, subgroupID)
+	if err != nil {
+		return err
+	}
+	return c.svc.MoveTaskBetweenSubGroups(taskLoc.Filename, taskLoc.SubgroupIx, taskID, target.SubgroupIx)
 }
 
 // ArchiveTask archives an active task by stable ID.
