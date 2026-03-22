@@ -46,6 +46,7 @@ type InboxSessionService interface {
 	StartInboxSession() (*InboxSession, error)
 	GetInboxSession(sessionID string) (*InboxSession, error)
 	UpdateInboxDraft(sessionID string, patch TaskPatch) (*InboxSession, error)
+	CommitInboxDecision(sessionID string, decision InboxDecision) (*InboxSession, error)
 	SkipInboxItem(sessionID string) (*InboxSession, error)
 	DiscardInboxSession(sessionID string) error
 }
@@ -99,6 +100,27 @@ type InboxSessionSummary struct {
 	Refiled   int
 	ToProject int
 	Skipped   int
+}
+
+// InboxDecisionKind is the final action chosen for the current inbox item.
+type InboxDecisionKind string
+
+const (
+	InboxDecisionTrash        InboxDecisionKind = "trash"
+	InboxDecisionDone         InboxDecisionKind = "done"
+	InboxDecisionSomeday      InboxDecisionKind = "someday"
+	InboxDecisionWaiting      InboxDecisionKind = "waiting"
+	InboxDecisionSingleAction InboxDecisionKind = "single_action"
+	InboxDecisionProject      InboxDecisionKind = "project"
+	InboxDecisionNewProject   InboxDecisionKind = "new_project"
+)
+
+// InboxDecision is a typed final decision for a Process Inbox item.
+type InboxDecision struct {
+	Kind         InboxDecisionKind
+	WaitingOn    string
+	ProjectID    string
+	ProjectTitle string
 }
 
 // InboxSessionItem is the current original item plus its draft.
@@ -221,6 +243,113 @@ func (c *Core) UpdateInboxDraft(sessionID string, patch TaskPatch) (*InboxSessio
 	draft := session.Current.Draft
 	applyTaskPatch(&draft, patch)
 	session.Current.Draft = draft
+	return c.GetInboxSession(sessionID)
+}
+
+// CommitInboxDecision persists the current draft according to a typed final decision
+// and advances the session.
+func (c *Core) CommitInboxDecision(sessionID string, decision InboxDecision) (*InboxSession, error) {
+	session, ok := c.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("inbox session %q not found", sessionID)
+	}
+	if session.Done {
+		return c.GetInboxSession(sessionID)
+	}
+	task := session.Current.Draft
+	summary := session.Summary
+
+	persistDraft := func() error {
+		return c.svc.UpdateTask(model.ListIn, task)
+	}
+
+	switch decision.Kind {
+	case InboxDecisionTrash:
+		if err := c.svc.TrashTask(model.ListIn, task.ID); err != nil {
+			return nil, err
+		}
+		summary.Trashed++
+	case InboxDecisionDone:
+		if err := persistDraft(); err != nil {
+			return nil, err
+		}
+		if err := c.svc.UpdateState(model.ListIn, task.ID, model.StateDone); err != nil {
+			return nil, err
+		}
+		summary.Done++
+	case InboxDecisionSomeday:
+		if err := persistDraft(); err != nil {
+			return nil, err
+		}
+		if _, err := c.MoveTaskToList(task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
+			return nil, err
+		}
+		summary.Someday++
+	case InboxDecisionWaiting:
+		if decision.WaitingOn != "" {
+			task.WaitingOn = decision.WaitingOn
+		}
+		if err := c.svc.UpdateTask(model.ListIn, task); err != nil {
+			return nil, err
+		}
+		if _, err := c.MoveTaskToList(task.ID, model.ListSingleActions, model.StateWaitingFor); err != nil {
+			return nil, err
+		}
+		summary.Waiting++
+	case InboxDecisionSingleAction:
+		if err := persistDraft(); err != nil {
+			return nil, err
+		}
+		if _, err := c.MoveTaskToList(task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
+			return nil, err
+		}
+		summary.Refiled++
+	case InboxDecisionProject:
+		if decision.ProjectID == "" {
+			return nil, fmt.Errorf("project decision requires project ID")
+		}
+		if err := persistDraft(); err != nil {
+			return nil, err
+		}
+		proj, err := c.GetProject(decision.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		targetSubgroupID := ""
+		if len(proj.Project.SubGroups) == 0 {
+			sg, err := c.CreateSubgroup(decision.ProjectID, "Tasks")
+			if err != nil {
+				return nil, err
+			}
+			targetSubgroupID = sg.Subgroup.ID
+		} else {
+			targetSubgroupID = proj.Project.SubGroups[0].ID
+		}
+		if _, err := c.MoveTaskToProject(task.ID, decision.ProjectID, targetSubgroupID, model.StateNextAction); err != nil {
+			return nil, err
+		}
+		summary.ToProject++
+	case InboxDecisionNewProject:
+		if strings.TrimSpace(decision.ProjectTitle) == "" {
+			return nil, fmt.Errorf("new project decision requires project title")
+		}
+		if err := persistDraft(); err != nil {
+			return nil, err
+		}
+		proj, err := c.svc.CreateProject(decision.ProjectTitle, "Tasks")
+		if err != nil {
+			return nil, err
+		}
+		if _, err := c.MoveTaskToProject(task.ID, proj.ID, proj.SubGroups[0].ID, model.StateNextAction); err != nil {
+			return nil, err
+		}
+		summary.ToProject++
+	default:
+		return nil, fmt.Errorf("unsupported inbox decision %q", decision.Kind)
+	}
+
+	next := buildInboxSession(session.ID, session.Items, session.Index+1, summary)
+	c.sessions[sessionID] = next
 	return c.GetInboxSession(sessionID)
 }
 

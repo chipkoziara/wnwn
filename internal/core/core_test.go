@@ -621,29 +621,30 @@ func TestInboxSessionLifecycle(t *testing.T) {
 		t.Fatalf("expected original item preserved and draft tags updated: %+v", updatedSession.Current)
 	}
 
+	committed, err := c.CommitInboxDecision(session.ID, InboxDecision{Kind: InboxDecisionSingleAction})
+	if err != nil {
+		t.Fatalf("commit single action decision: %v", err)
+	}
+	if committed.Progress.Current != 2 || committed.Summary.Refiled != 1 {
+		t.Fatalf("unexpected session after commit: %+v", committed)
+	}
+	loc, err := c.ResolveTask(inbox.Tasks[0].ID)
+	if err != nil {
+		t.Fatalf("resolve committed task: %v", err)
+	}
+	if loc.ListType != model.ListSingleActions || loc.Task.Text != updatedText || loc.Task.Notes != note {
+		t.Fatalf("expected first task moved to single actions with updated draft, got %+v", loc)
+	}
+
 	next, err := c.SkipInboxItem(session.ID)
 	if err != nil {
 		t.Fatalf("skip item: %v", err)
 	}
-	if next.Progress.Current != 2 || next.Progress.Total != 2 {
-		t.Fatalf("unexpected progress after skip: %+v", next.Progress)
+	if !next.Done || next.Current.Step != InboxStepComplete {
+		t.Fatalf("expected completed session after final skip, got %+v", next)
 	}
-	if next.Summary.Skipped != 1 {
-		t.Fatalf("expected skipped count to increment, got %+v", next.Summary)
-	}
-	if next.Current.Original.Text != "Second" {
-		t.Fatalf("expected second item after skip, got %+v", next.Current)
-	}
-
-	doneSession, err := c.SkipInboxItem(session.ID)
-	if err != nil {
-		t.Fatalf("skip final item: %v", err)
-	}
-	if !doneSession.Done || doneSession.Current.Step != InboxStepComplete {
-		t.Fatalf("expected completed session, got %+v", doneSession)
-	}
-	if doneSession.Summary.Skipped != 2 {
-		t.Fatalf("expected both items skipped, got %+v", doneSession.Summary)
+	if next.Summary.Refiled != 1 || next.Summary.Skipped != 1 {
+		t.Fatalf("unexpected final summary: %+v", next.Summary)
 	}
 
 	if err := c.DiscardInboxSession(session.ID); err != nil {

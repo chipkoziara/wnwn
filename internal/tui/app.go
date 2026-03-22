@@ -721,6 +721,36 @@ func (m *Model) updateProcessDraft(patch core.TaskPatch) {
 	m.applyProcessSession(session)
 }
 
+func processActionLabel(kind core.InboxDecisionKind) string {
+	switch kind {
+	case core.InboxDecisionTrash:
+		return "trashed"
+	case core.InboxDecisionDone:
+		return "done"
+	case core.InboxDecisionSomeday:
+		return "someday"
+	case core.InboxDecisionWaiting:
+		return "waiting"
+	case core.InboxDecisionSingleAction:
+		return "refiled"
+	case core.InboxDecisionProject, core.InboxDecisionNewProject:
+		return "toProject"
+	default:
+		return ""
+	}
+}
+
+func (m Model) commitProcessDecision(decision core.InboxDecision) tea.Cmd {
+	return func() tea.Msg {
+		session, err := m.core.CommitInboxDecision(m.processSessionID, decision)
+		if err != nil {
+			return errMsg{err}
+		}
+		_ = session
+		return processAdvancedMsg{action: processActionLabel(decision.Kind)}
+	}
+}
+
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -1574,11 +1604,7 @@ func (m *Model) advanceProcessInbox() {
 // processRefileToNewProject refills the current process task into a freshly
 // created project. Called from the projectCreatedMsg handler when in process inbox view.
 func (m Model) processRefileToNewProject(filename string) tea.Cmd {
-	task := m.processTask
 	return func() tea.Msg {
-		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-			return errMsg{err}
-		}
 		projects, err := m.core.ListProjectSummaries()
 		if err != nil {
 			return errMsg{err}
@@ -1593,24 +1619,7 @@ func (m Model) processRefileToNewProject(filename string) tea.Cmd {
 		if projectID == "" {
 			return errMsg{fmt.Errorf("project %q not found after creation", filename)}
 		}
-		proj, err := m.core.GetProject(projectID)
-		if err != nil {
-			return errMsg{err}
-		}
-		targetSubgroupID := ""
-		if len(proj.Project.SubGroups) == 0 {
-			sg, err := m.core.CreateSubgroup(projectID, "Tasks")
-			if err != nil {
-				return errMsg{err}
-			}
-			targetSubgroupID = sg.Subgroup.ID
-		} else {
-			targetSubgroupID = proj.Project.SubGroups[0].ID
-		}
-		if _, err := m.core.MoveTaskToProject(task.ID, projectID, targetSubgroupID, model.StateNextAction); err != nil {
-			return errMsg{err}
-		}
-		return processAdvancedMsg{action: "toProject"}
+		return m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionProject, ProjectID: projectID})()
 	}
 }
 
@@ -1663,14 +1672,7 @@ func (m Model) updateProcessStepActionable(msg tea.KeyPressMsg) (tea.Model, tea.
 func (m Model) updateProcessStepNotActionable(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "t":
-		// Trash immediately — no enrichment needed for non-actionable items.
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.TrashTask(model.ListIn, task.ID); err != nil {
-				return errMsg{err}
-			}
-			return processAdvancedMsg{action: "trashed"}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionTrash})
 	case "esc":
 		m.processStep = stepActionable
 	}
@@ -1778,17 +1780,7 @@ func (m Model) updateProcessStepEnrichTags(msg tea.KeyPressMsg) (tea.Model, tea.
 func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "d":
-		// Done (< 2 min, did it). Persist enrichment + mark done.
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-				return errMsg{err}
-			}
-			if err := m.svc.UpdateState(model.ListIn, task.ID, model.StateDone); err != nil {
-				return errMsg{err}
-			}
-			return processAdvancedMsg{action: "done"}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionDone})
 
 	case "w":
 		// Waiting for: go to waiting_on input step.
@@ -1800,30 +1792,10 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		return m, cmd
 
 	case "s":
-		// Someday/maybe: actionable but deferred indefinitely.
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-				return errMsg{err}
-			}
-			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
-				return errMsg{err}
-			}
-			return processAdvancedMsg{action: "someday"}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionSomeday})
 
 	case "r":
-		// Refile to single actions as next-action.
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-				return errMsg{err}
-			}
-			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
-				return errMsg{err}
-			}
-			return processAdvancedMsg{action: "refiled"}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionSingleAction})
 
 	case "p":
 		// Pick an existing project.
@@ -1854,16 +1826,7 @@ func (m Model) updateProcessStepWaitingOn(msg tea.KeyPressMsg) (tea.Model, tea.C
 	case "enter":
 		waitingOn := strings.TrimSpace(m.input.Value())
 		m.updateProcessDraft(core.TaskPatch{WaitingOn: taskPatchStringPtr(waitingOn)})
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-				return errMsg{err}
-			}
-			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateWaitingFor); err != nil {
-				return errMsg{err}
-			}
-			return processAdvancedMsg{action: "waiting"}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionWaiting, WaitingOn: waitingOn})
 
 	case "esc":
 		m.processStep = stepRoute
@@ -1883,19 +1846,7 @@ func (m Model) updateProcessStepNewProject(msg tea.KeyPressMsg) (tea.Model, tea.
 			return m, nil
 		}
 		m.mode = modeNormal
-		// Persist enrichment before creating project + refiling.
-		task := m.processTask
-		return m, func() tea.Msg {
-			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-				return errMsg{err}
-			}
-			_, err := m.svc.CreateProject(title, "Tasks")
-			if err != nil {
-				return errMsg{err}
-			}
-			filename := store.Slugify(title) + ".md"
-			return projectCreatedMsg{title: title, filename: filename}
-		}
+		return m, m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionNewProject, ProjectTitle: title})
 
 	case "esc":
 		m.processStep = stepRoute
@@ -2429,11 +2380,7 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // processMoveToProject persists enrichment edits then moves the current process
 // task into the first sub-group of the chosen project.
 func (m Model) processMoveToProject(filename, projTitle string) tea.Cmd {
-	task := m.processTask
 	return func() tea.Msg {
-		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
-			return errMsg{err}
-		}
 		projects, err := m.core.ListProjectSummaries()
 		if err != nil {
 			return errMsg{err}
@@ -2448,25 +2395,8 @@ func (m Model) processMoveToProject(filename, projTitle string) tea.Cmd {
 		if projectID == "" {
 			return errMsg{fmt.Errorf("project %q not found", filename)}
 		}
-		proj, err := m.core.GetProject(projectID)
-		if err != nil {
-			return errMsg{err}
-		}
-		targetSubgroupID := ""
-		if len(proj.Project.SubGroups) == 0 {
-			sg, err := m.core.CreateSubgroup(projectID, "Tasks")
-			if err != nil {
-				return errMsg{err}
-			}
-			targetSubgroupID = sg.Subgroup.ID
-		} else {
-			targetSubgroupID = proj.Project.SubGroups[0].ID
-		}
-		if _, err := m.core.MoveTaskToProject(task.ID, projectID, targetSubgroupID, model.StateNextAction); err != nil {
-			return errMsg{err}
-		}
 		_ = projTitle
-		return processAdvancedMsg{action: "toProject"}
+		return m.commitProcessDecision(core.InboxDecision{Kind: core.InboxDecisionProject, ProjectID: projectID})()
 	}
 }
 
