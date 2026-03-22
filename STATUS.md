@@ -79,6 +79,8 @@ A Getting Things Done (GTD) inspired TUI app built in Go with Bubbletea v2, Lipg
 ### TUI (`internal/tui/`)
 Four top-level views (Inbox, Actions, Projects, Views) plus Process Inbox mode, with these features:
 
+- TUI now holds both the legacy `*service.Service` and the new `*core.Core` during the extraction. The first migrated non-project paths already use core APIs, while project-detail and Process Inbox flows still rely on the legacy service until subgroup/project workflow migration is ready.
+
 **All list views:**
 - j/k, arrow keys, g/G navigation
 - Tab and 1/2/3/4 to switch between views (subject to configured tab order)
@@ -254,6 +256,7 @@ Prioritized by impact:
 
 ### Recent Changes
 
+- **First TUI/core migration slice landed** — The TUI model now owns both the legacy service and the new core boundary so migration can happen incrementally. Non-project task detail save now goes through `core.UpdateTask(...)`, and non-project archive/trash/restore actions in view-results and weekly review now use the core's ID-first task APIs. Project-detail task operations, subgroup flows, refile-to-project flows, and Process Inbox remain on the legacy service for now to avoid taking on subgroup API redesign too early.
 - **Core extraction started with a real client seam** — Added `internal/core` as the first-pass hard boundary over the legacy service/store stack, including stable-ID resolvers for tasks/projects/sub-groups, core query/review/import-export wrappers, patch-based task/project updates, and ID-first archive/restore/trash operations. The CLI now uses this core boundary for add/query/update/import/export, making it the first migrated client while the TUI still runs on the legacy service during the transition.
 - **Legacy project update gap identified during extraction** — While wiring `core.UpdateProject`, the extraction surfaced that `internal/service.UpdateProject` does not currently persist `Project.WaitingOn`. This is now tracked separately so it can be fixed without losing the architecture work or accidentally changing behavior mid-refactor.
 - **First public release published** — `wnwn v0.1.0` has been released publicly as a source-build release. The public release includes the refreshed README/release notes, demo walkthrough support, aligned module path, release hardening checks, and the late Process Inbox help-overlay cleanup done during final release prep.

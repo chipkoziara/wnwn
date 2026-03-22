@@ -14,6 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/chipkoziara/wnwn/internal/config"
+	"github.com/chipkoziara/wnwn/internal/core"
 	"github.com/chipkoziara/wnwn/internal/model"
 	"github.com/chipkoziara/wnwn/internal/query"
 	"github.com/chipkoziara/wnwn/internal/search"
@@ -158,6 +159,7 @@ const (
 // Model is the top-level Bubbletea model for the application.
 type Model struct {
 	svc         *service.Service
+	core        *core.Core
 	store       *store.Store
 	list        *model.TaskList
 	currentList model.ListType
@@ -257,10 +259,16 @@ func New(dataDir string) Model {
 // NewWithConfig creates a new TUI model with an explicit config.
 func NewWithConfig(dataDir string, cfg config.Config) Model {
 	s := store.New(dataDir)
-	svc := service.NewWithBehavior(s, service.BehaviorConfig{
+	var savedViewsCfg []model.SavedView
+	for _, v := range cfg.Views.Saved {
+		savedViewsCfg = append(savedViewsCfg, model.SavedView{Name: v.Name, Query: v.Query, IncludeArchived: v.IncludeArchived})
+	}
+	coreSvc := core.New(s, core.CoreConfig{
 		AutoArchiveDone:     cfg.Archive.AutoArchiveDone,
 		AutoArchiveCanceled: cfg.Archive.AutoArchiveCanceled,
+		SavedViews:          savedViewsCfg,
 	})
+	svc := coreSvc.UnderlyingService()
 
 	ti := textinput.New()
 	ti.Placeholder = "What needs to be done?"
@@ -272,6 +280,7 @@ func NewWithConfig(dataDir string, cfg config.Config) Model {
 	m := Model{
 		svc:            svc,
 		store:          s,
+		core:           coreSvc,
 		currentList:    model.ListIn,
 		input:          ti,
 		datePicker:     datepicker.New(),
@@ -3449,7 +3458,6 @@ func (m Model) saveDetailTask() tea.Cmd {
 	isProject := m.detailIsProject
 	filename := m.activeFilename
 	sgIdx := m.detailFromSgIdx
-	listType := m.detailFromList
 	fromView := m.detailFromView
 	viewName := m.activeViewName
 	viewQueryStr := m.activeViewQuery
@@ -3459,7 +3467,16 @@ func (m Model) saveDetailTask() tea.Cmd {
 		if isProject {
 			err = m.svc.UpdateProjectTask(filename, sgIdx, task)
 		} else {
-			err = m.svc.UpdateTask(listType, task)
+			_, err = m.core.UpdateTask(task.ID, core.TaskPatch{
+				Text:      &task.Text,
+				State:     &task.State,
+				Deadline:  task.Deadline,
+				Scheduled: task.Scheduled,
+				Tags:      slicePtr(task.Tags),
+				URL:       stringPtr(task.URL),
+				Notes:     stringPtr(task.Notes),
+				WaitingOn: stringPtr(task.WaitingOn),
+			})
 		}
 		if err != nil {
 			return errMsg{err}
@@ -4441,7 +4458,7 @@ func (m Model) weeklyTaskArchive() tea.Cmd {
 		if vt.IsProject {
 			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
-			err = m.svc.ArchiveTask(vt.ListType, vt.Task.ID)
+			err = m.core.ArchiveTask(vt.Task.ID)
 		}
 		if err != nil {
 			return errMsg{err}
@@ -4460,7 +4477,7 @@ func (m Model) weeklyTaskTrash() tea.Cmd {
 		if vt.IsProject {
 			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
-			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
+			err = m.core.TrashTask(vt.Task.ID)
 		}
 		if err != nil {
 			return errMsg{err}
@@ -5042,7 +5059,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 		if vt.IsProject {
 			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
-			err = m.svc.TrashTask(vt.ListType, vt.Task.ID)
+			err = m.core.TrashTask(vt.Task.ID)
 		}
 		if err != nil {
 			return errMsg{err}
@@ -5059,7 +5076,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 			}
 		}
 		undoApply := func() error {
-			_, err := m.svc.RestoreTask(vt.Task, source)
+			_, err := m.core.RestoreTask(vt.Task.ID)
 			return err
 		}
 		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task trashed", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
@@ -5080,7 +5097,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 		if vt.IsProject {
 			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
 		} else {
-			err = m.svc.ArchiveTask(vt.ListType, vt.Task.ID)
+			err = m.core.ArchiveTask(vt.Task.ID)
 		}
 		if err != nil {
 			return errMsg{err}
@@ -5097,7 +5114,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 			}
 		}
 		undoApply := func() error {
-			_, err := m.svc.RestoreArchivedTask(vt.Task.ID)
+			_, err := m.core.RestoreTask(vt.Task.ID)
 			return err
 		}
 		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "Task archived", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
@@ -5114,7 +5131,7 @@ func (m Model) viewResultRestore() tea.Cmd {
 	queryStr := m.activeViewQuery
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
-		destination, err := m.svc.RestoreArchivedTask(vt.Task.ID)
+		restored, err := m.core.RestoreTask(vt.Task.ID)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -5129,12 +5146,21 @@ func (m Model) viewResultRestore() tea.Cmd {
 				filtered = append(filtered, v)
 			}
 		}
-		status := fmt.Sprintf("Restored: %s -> %s", vt.Task.Text, destination)
+		status := fmt.Sprintf("Restored: %s -> %s", vt.Task.Text, restored.Source)
 		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, status: status}
 	}
 }
 
 // sourceBadge returns a short muted badge string for the source of a view task.
+func stringPtr(s string) *string {
+	return &s
+}
+
+func slicePtr[T any](v []T) *[]T {
+	cp := append([]T(nil), v...)
+	return &cp
+}
+
 func sourceBadge(source string) string {
 	switch source {
 	case "in":
