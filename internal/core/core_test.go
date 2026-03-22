@@ -518,4 +518,62 @@ func TestProjectAndSubgroupCoreAPIs(t *testing.T) {
 	}
 }
 
+func TestMoveTaskCoreAPIs(t *testing.T) {
+	c := newTestCore(t)
+	inbox, err := c.store.ReadList(model.ListIn)
+	if err != nil {
+		t.Fatalf("read inbox: %v", err)
+	}
+	inboxTask := model.Task{ID: id.New(), Created: time.Now(), Text: "Inbox task"}
+	inbox.Tasks = append(inbox.Tasks, inboxTask)
+	if err := c.store.WriteList(inbox); err != nil {
+		t.Fatalf("write inbox: %v", err)
+	}
+
+	actions, err := c.store.ReadList(model.ListSingleActions)
+	if err != nil {
+		t.Fatalf("read actions: %v", err)
+	}
+	actionTask := model.Task{ID: id.New(), Created: time.Now(), Text: "Action task", State: model.StateNextAction}
+	actions.Tasks = append(actions.Tasks, actionTask)
+	if err := c.store.WriteList(actions); err != nil {
+		t.Fatalf("write actions: %v", err)
+	}
+
+	proj := &model.Project{
+		Title: "Launch",
+		ID:    id.New(),
+		State: model.StateActive,
+		Tags:  []string{"project"},
+		SubGroups: []model.SubGroup{{Title: "Tasks", ID: id.New()}},
+	}
+	if err := c.store.WriteProject(proj); err != nil {
+		t.Fatalf("write project: %v", err)
+	}
+
+	movedToActions, err := c.MoveTaskToList(inboxTask.ID, model.ListSingleActions, model.StateNextAction)
+	if err != nil {
+		t.Fatalf("move inbox to actions: %v", err)
+	}
+	if movedToActions.Kind != TaskLocationActions || movedToActions.ListType != model.ListSingleActions {
+		t.Fatalf("unexpected inbox->actions move result: %+v", movedToActions)
+	}
+
+	movedToProject, err := c.MoveTaskToProject(actionTask.ID, proj.ID, proj.SubGroups[0].ID, model.StateNextAction)
+	if err != nil {
+		t.Fatalf("move actions to project: %v", err)
+	}
+	if movedToProject.Kind != TaskLocationProject || movedToProject.ProjectID != proj.ID || movedToProject.SubgroupID != proj.SubGroups[0].ID {
+		t.Fatalf("unexpected actions->project move result: %+v", movedToProject)
+	}
+
+	movedInboxToProject, err := c.MoveTaskToProject(inboxTask.ID, proj.ID, proj.SubGroups[0].ID, model.StateSomeday)
+	if err != nil {
+		t.Fatalf("move actions->project after first move: %v", err)
+	}
+	if movedInboxToProject.Kind != TaskLocationProject || movedInboxToProject.Task.State != model.StateSomeday {
+		t.Fatalf("unexpected move-to-project state result: %+v", movedInboxToProject)
+	}
+}
+
 func timePtr(t time.Time) *time.Time { return &t }

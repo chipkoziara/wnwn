@@ -1432,12 +1432,13 @@ func (m Model) loadInboxForProcessing() tea.Msg {
 func (m Model) refileTask(task model.Task, destList model.ListType, newState model.TaskState) tea.Cmd {
 	fromList := m.currentList
 	return func() tea.Msg {
-		err := m.svc.MoveToList(fromList, task.ID, destList, newState)
+		_, err := m.core.MoveTaskToList(task.ID, destList, newState)
 		if err != nil {
 			return errMsg{err}
 		}
 		undoApply := func() error {
-			return m.svc.MoveToList(destList, task.ID, fromList, task.State)
+			_, err := m.core.MoveTaskToList(task.ID, fromList, task.State)
+			return err
 		}
 		return taskRefiledMsg{text: task.Text, undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored: %s", task.Text)}
 	}
@@ -1448,8 +1449,7 @@ func (m Model) refileTask(task model.Task, destList model.ListType, newState mod
 func (m Model) setStateSomeday(taskID, text string) tea.Cmd {
 	return func() tea.Msg {
 		if m.currentList == model.ListIn {
-			err := m.svc.MoveToList(model.ListIn, taskID, model.ListSingleActions, model.StateSomeday)
-			if err != nil {
+			if _, err := m.core.MoveTaskToList(taskID, model.ListSingleActions, model.StateSomeday); err != nil {
 				return errMsg{err}
 			}
 		} else {
@@ -1467,8 +1467,7 @@ func (m Model) setStateSomeday(taskID, text string) tea.Cmd {
 func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
 	return func() tea.Msg {
 		if m.currentList == model.ListIn {
-			err := m.svc.MoveToList(model.ListIn, taskID, model.ListSingleActions, model.StateWaitingFor)
-			if err != nil {
+			if _, err := m.core.MoveTaskToList(taskID, model.ListSingleActions, model.StateWaitingFor); err != nil {
 				return errMsg{err}
 			}
 		} else {
@@ -2317,8 +2316,7 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				// Persist enrichment then refile into the chosen project.
 				return m, m.processMoveToProject(proj.Filename, proj.Title)
 			}
-			// Move to first sub-group of selected project (index 0).
-			return m, m.moveToProject(proj.Filename, proj.Title)
+			return m, m.moveToProject(proj.ID, proj.Title)
 		}
 	}
 
@@ -2391,32 +2389,35 @@ func (m Model) updatePickingSubGroup(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // moveToProject moves the refile task to the first sub-group of a project.
-func (m Model) moveToProject(filename, projTitle string) tea.Cmd {
+func (m Model) moveToProject(projectID, projTitle string) tea.Cmd {
 	taskID := m.refileTaskID
 	taskText := m.refileTaskText
 	fromList := m.refileFromList
 	oldState := m.refilePrevState
 	return func() tea.Msg {
-		// Ensure project has at least one sub-group.
-		proj, err := m.svc.GetProject(filename)
+		proj, err := m.core.GetProject(projectID)
 		if err != nil {
 			return errMsg{err}
 		}
-		sgIdx := 0
-		if len(proj.SubGroups) == 0 {
-			// Create a default sub-group.
-			_, err = m.svc.AddSubGroup(filename, "Tasks")
+		targetSubgroupID := ""
+		if len(proj.Project.SubGroups) == 0 {
+			sg, err := m.core.CreateSubgroup(projectID, "Tasks")
 			if err != nil {
 				return errMsg{err}
 			}
+			targetSubgroupID = sg.Subgroup.ID
+		} else {
+			targetSubgroupID = proj.Project.SubGroups[0].ID
 		}
-		err = m.svc.MoveToProject(fromList, taskID, filename, sgIdx, model.StateNextAction)
+		moved, err := m.core.MoveTaskToProject(taskID, projectID, targetSubgroupID, model.StateNextAction)
 		if err != nil {
 			return errMsg{err}
 		}
 		undoApply := func() error {
-			return m.svc.MoveTaskFromProjectToList(filename, sgIdx, taskID, fromList, oldState)
+			_, err := m.core.MoveTaskToList(taskID, fromList, oldState)
+			return err
 		}
+		_ = moved
 		return taskRefiledMsg{text: fmt.Sprintf("%s -> %s", taskText, projTitle), undoApply: undoApply, undoPrompt: "Task refiled", undoSuccess: fmt.Sprintf("Restored: %s", taskText)}
 	}
 }

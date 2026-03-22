@@ -28,6 +28,8 @@ type TaskService interface {
 	ArchiveTask(taskID string) error
 	RestoreTask(taskID string) (TaskLocation, error)
 	TrashTask(taskID string) error
+	MoveTaskToList(taskID string, toList model.ListType, newState model.TaskState) (TaskLocation, error)
+	MoveTaskToProject(taskID string, projectID, subgroupID string, newState model.TaskState) (TaskLocation, error)
 }
 type ProjectService interface {
 	GetProject(projectID string) (ProjectLocation, error)
@@ -357,6 +359,12 @@ func (c *Core) GetProject(projectID string) (ProjectLocation, error) {
 		return ProjectLocation{}, err
 	}
 	return *loc, nil
+}
+
+// ListProjectSummaries returns the legacy project summaries for picker/list use
+// while the extraction is still in progress.
+func (c *Core) ListProjectSummaries() ([]service.ProjectSummary, error) {
+	return c.svc.ListProjects()
 }
 
 // QueryProjects runs the shared query DSL over projects by projecting project metadata
@@ -882,6 +890,66 @@ func (c *Core) MoveTaskToSubgroup(taskID, subgroupID string) error {
 		return err
 	}
 	return c.svc.MoveTaskBetweenSubGroups(taskLoc.Filename, taskLoc.SubgroupIx, taskID, target.SubgroupIx)
+}
+
+// MoveTaskToList moves a task by stable ID into a destination list with the requested state.
+func (c *Core) MoveTaskToList(taskID string, toList model.ListType, newState model.TaskState) (TaskLocation, error) {
+	loc, err := c.ResolveTask(taskID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	if loc.Archived {
+		return TaskLocation{}, fmt.Errorf("task %s is archived and cannot be moved", taskID)
+	}
+	if loc.Kind == TaskLocationProject {
+		if err := c.svc.MoveTaskFromProjectToList(loc.Filename, loc.SubgroupIx, taskID, toList, newState); err != nil {
+			return TaskLocation{}, err
+		}
+	} else {
+		if loc.ListType == toList {
+			updated, err := c.UpdateTask(taskID, TaskPatch{State: &newState})
+			return updated, err
+		}
+		if err := c.svc.MoveToList(loc.ListType, taskID, toList, newState); err != nil {
+			return TaskLocation{}, err
+		}
+	}
+	resolved, err := c.ResolveTask(taskID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	return *resolved, nil
+}
+
+// MoveTaskToProject moves a task by stable ID into a project subgroup with the requested state.
+func (c *Core) MoveTaskToProject(taskID string, projectID, subgroupID string, newState model.TaskState) (TaskLocation, error) {
+	loc, err := c.ResolveTask(taskID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	if loc.Archived {
+		return TaskLocation{}, fmt.Errorf("task %s is archived and cannot be moved", taskID)
+	}
+	target, err := c.ResolveSubgroup(projectID, subgroupID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	if loc.Kind == TaskLocationProject {
+		if loc.ProjectID == projectID && loc.SubgroupID == subgroupID {
+			updated, err := c.UpdateTask(taskID, TaskPatch{State: &newState})
+			return updated, err
+		}
+		return TaskLocation{}, fmt.Errorf("moving project tasks between projects is not implemented yet")
+	} else {
+		if err := c.svc.MoveToProject(loc.ListType, taskID, target.Filename, target.SubgroupIx, newState); err != nil {
+			return TaskLocation{}, err
+		}
+	}
+	resolved, err := c.ResolveTask(taskID)
+	if err != nil {
+		return TaskLocation{}, err
+	}
+	return *resolved, nil
 }
 
 // ArchiveTask archives an active task by stable ID.
