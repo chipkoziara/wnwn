@@ -1500,11 +1500,38 @@ func (m *Model) advanceProcessInbox() {
 func (m Model) processRefileToNewProject(filename string) tea.Cmd {
 	task := m.processTask
 	return func() tea.Msg {
-		// Persist any enrichment to the inbox first.
 		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
 			return errMsg{err}
 		}
-		if err := m.svc.MoveToProject(model.ListIn, task.ID, filename, 0, model.StateNextAction); err != nil {
+		projects, err := m.core.ListProjectSummaries()
+		if err != nil {
+			return errMsg{err}
+		}
+		var projectID string
+		for _, p := range projects {
+			if p.Filename == filename {
+				projectID = p.ID
+				break
+			}
+		}
+		if projectID == "" {
+			return errMsg{fmt.Errorf("project %q not found after creation", filename)}
+		}
+		proj, err := m.core.GetProject(projectID)
+		if err != nil {
+			return errMsg{err}
+		}
+		targetSubgroupID := ""
+		if len(proj.Project.SubGroups) == 0 {
+			sg, err := m.core.CreateSubgroup(projectID, "Tasks")
+			if err != nil {
+				return errMsg{err}
+			}
+			targetSubgroupID = sg.Subgroup.ID
+		} else {
+			targetSubgroupID = proj.Project.SubGroups[0].ID
+		}
+		if _, err := m.core.MoveTaskToProject(task.ID, projectID, targetSubgroupID, model.StateNextAction); err != nil {
 			return errMsg{err}
 		}
 		return processAdvancedMsg{action: "toProject"}
@@ -1703,7 +1730,7 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
 				return errMsg{err}
 			}
-			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
+			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateSomeday); err != nil {
 				return errMsg{err}
 			}
 			return processAdvancedMsg{action: "someday"}
@@ -1716,7 +1743,7 @@ func (m Model) updateProcessStepRoute(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
 				return errMsg{err}
 			}
-			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
+			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateNextAction); err != nil {
 				return errMsg{err}
 			}
 			return processAdvancedMsg{action: "refiled"}
@@ -1756,7 +1783,7 @@ func (m Model) updateProcessStepWaitingOn(msg tea.KeyPressMsg) (tea.Model, tea.C
 			if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
 				return errMsg{err}
 			}
-			if err := m.svc.MoveToList(model.ListIn, task.ID, model.ListSingleActions, model.StateWaitingFor); err != nil {
+			if _, err := m.core.MoveTaskToList(task.ID, model.ListSingleActions, model.StateWaitingFor); err != nil {
 				return errMsg{err}
 			}
 			return processAdvancedMsg{action: "waiting"}
@@ -2328,23 +2355,41 @@ func (m Model) updatePickingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) processMoveToProject(filename, projTitle string) tea.Cmd {
 	task := m.processTask
 	return func() tea.Msg {
-		// Persist enrichment to inbox first.
 		if err := m.svc.UpdateTask(model.ListIn, task); err != nil {
 			return errMsg{err}
 		}
-		// Ensure the project has at least one sub-group.
-		proj, err := m.svc.GetProject(filename)
+		projects, err := m.core.ListProjectSummaries()
 		if err != nil {
 			return errMsg{err}
 		}
-		if len(proj.SubGroups) == 0 {
-			if _, err := m.svc.AddSubGroup(filename, "Tasks"); err != nil {
-				return errMsg{err}
+		var projectID string
+		for _, p := range projects {
+			if p.Filename == filename {
+				projectID = p.ID
+				break
 			}
 		}
-		if err := m.svc.MoveToProject(model.ListIn, task.ID, filename, 0, model.StateNextAction); err != nil {
+		if projectID == "" {
+			return errMsg{fmt.Errorf("project %q not found", filename)}
+		}
+		proj, err := m.core.GetProject(projectID)
+		if err != nil {
 			return errMsg{err}
 		}
+		targetSubgroupID := ""
+		if len(proj.Project.SubGroups) == 0 {
+			sg, err := m.core.CreateSubgroup(projectID, "Tasks")
+			if err != nil {
+				return errMsg{err}
+			}
+			targetSubgroupID = sg.Subgroup.ID
+		} else {
+			targetSubgroupID = proj.Project.SubGroups[0].ID
+		}
+		if _, err := m.core.MoveTaskToProject(task.ID, projectID, targetSubgroupID, model.StateNextAction); err != nil {
+			return errMsg{err}
+		}
+		_ = projTitle
 		return processAdvancedMsg{action: "toProject"}
 	}
 }
