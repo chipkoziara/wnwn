@@ -1894,38 +1894,40 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			}
 			switch raw {
 			case "d":
-				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone); err != nil {
+				newState := model.StateDone
+				if _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := item.task.State
 				undoTick := m.setUndo(
 					"Task marked done",
-					func() error {
-						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
-					},
+					func() error { _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.reloadProjectDetail(),
 					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "c":
-				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled); err != nil {
+				newState := model.StateCanceled
+				if _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := item.task.State
 				undoTick := m.setUndo(
 					"Task canceled",
-					func() error {
-						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
-					},
+					func() error { _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.reloadProjectDetail(),
 					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
 				return m, tea.Batch(m.reloadProjectDetail(), undoTick, m.clearStatusAfter())
 			case "w":
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateWaitingFor)
+				newState := model.StateWaitingFor
+				_, _ = m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState})
 				return m, m.reloadProjectDetail()
 			case "m":
-				_ = m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateSomeday)
+				newState := model.StateSomeday
+				_, _ = m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState})
 				return m, m.reloadProjectDetail()
 			default:
 				return m, nil
@@ -2100,15 +2102,15 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateDone); err != nil {
+				newState := model.StateDone
+				if _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := item.task.State
 				undoTick := m.setUndo(
 					"Task marked done",
-					func() error {
-						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
-					},
+					func() error { _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.reloadProjectDetail(),
 					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
@@ -2124,15 +2126,15 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				if err := m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, model.StateCanceled); err != nil {
+				newState := model.StateCanceled
+				if _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &newState}); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
+				oldState := item.task.State
 				undoTick := m.setUndo(
 					"Task canceled",
-					func() error {
-						return m.svc.UpdateProjectTaskState(m.activeFilename, item.sgIdx, item.task.ID, item.task.State)
-					},
+					func() error { _, err := m.core.UpdateTask(item.task.ID, core.TaskPatch{State: &oldState}); return err },
 					m.reloadProjectDetail(),
 					fmt.Sprintf("Restored: %s", item.task.Text),
 				)
@@ -2148,14 +2150,14 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				if err := m.svc.ArchiveProjectTask(m.activeFilename, item.sgIdx, item.task.ID); err != nil {
+				if err := m.core.ArchiveTask(item.task.ID); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
 				undoTick := m.setUndo(
 					"Task archived",
 					func() error {
-						_, err := m.svc.RestoreArchivedTask(item.task.ID)
+						_, err := m.core.RestoreTask(item.task.ID)
 						return err
 					},
 					m.reloadProjectDetail(),
@@ -2173,7 +2175,7 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if len(flatItems) > 0 {
 			item := flatItems[m.projCursor]
 			if item.isTask {
-				if err := m.svc.TrashProjectTask(m.activeFilename, item.sgIdx, item.task.ID); err != nil {
+				if err := m.core.TrashTask(item.task.ID); err != nil {
 					m.statusMsg = fmt.Sprintf("Error: %v", err)
 					return m, m.clearStatusAfter()
 				}
@@ -3463,29 +3465,25 @@ func parseDateTime(s string) (*time.Time, bool) {
 // saveDetailTask writes the working copy back to disk and returns to the prior view.
 func (m Model) saveDetailTask() tea.Cmd {
 	task := m.detailTask
-	isProject := m.detailIsProject
-	filename := m.activeFilename
-	sgIdx := m.detailFromSgIdx
+	_ = m.detailIsProject
+	_ = m.activeFilename
+	_ = m.detailFromSgIdx
 	fromView := m.detailFromView
 	viewName := m.activeViewName
 	viewQueryStr := m.activeViewQuery
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
 		var err error
-		if isProject {
-			err = m.svc.UpdateProjectTask(filename, sgIdx, task)
-		} else {
-			_, err = m.core.UpdateTask(task.ID, core.TaskPatch{
-				Text:      &task.Text,
-				State:     &task.State,
-				Deadline:  task.Deadline,
-				Scheduled: task.Scheduled,
-				Tags:      slicePtr(task.Tags),
-				URL:       stringPtr(task.URL),
-				Notes:     stringPtr(task.Notes),
-				WaitingOn: stringPtr(task.WaitingOn),
-			})
-		}
+		_, err = m.core.UpdateTask(task.ID, core.TaskPatch{
+			Text:      &task.Text,
+			State:     &task.State,
+			Deadline:  task.Deadline,
+			Scheduled: task.Scheduled,
+			Tags:      slicePtr(task.Tags),
+			URL:       stringPtr(task.URL),
+			Notes:     stringPtr(task.Notes),
+			WaitingOn: stringPtr(task.WaitingOn),
+		})
 		if err != nil {
 			return errMsg{err}
 		}
