@@ -16,6 +16,7 @@ import (
 type Service interface {
 	TaskService
 	ProjectService
+	InboxSessionService
 	InboxService
 	ViewService
 	ReviewService
@@ -41,6 +42,13 @@ type ProjectService interface {
 	AddProjectTask(projectID, subgroupID, text string, opts CaptureOpts) (TaskLocation, error)
 	MoveTaskToSubgroup(taskID, subgroupID string) error
 }
+type InboxSessionService interface {
+	StartInboxSession() (*InboxSession, error)
+	GetInboxSession(sessionID string) (*InboxSession, error)
+	SkipInboxItem(sessionID string) (*InboxSession, error)
+	DiscardInboxSession(sessionID string) error
+}
+
 type InboxService interface{}
 type ViewService interface {
 	ListViews() []model.SavedView
@@ -62,13 +70,62 @@ type CoreConfig struct {
 	SavedViews          []model.SavedView
 }
 
+// InboxStep is the current step in a Process Inbox session.
+type InboxStep string
+
+const (
+	InboxStepActionable    InboxStep = "actionable"
+	InboxStepNotActionable InboxStep = "not_actionable"
+	InboxStepEnrich        InboxStep = "enrich"
+	InboxStepRoute         InboxStep = "route"
+	InboxStepWaitingOn     InboxStep = "waiting_on"
+	InboxStepNewProject    InboxStep = "new_project"
+	InboxStepComplete      InboxStep = "complete"
+)
+
+// InboxSessionProgress reports current session position.
+type InboxSessionProgress struct {
+	Current int
+	Total   int
+}
+
+// InboxSessionSummary reports completion counters.
+type InboxSessionSummary struct {
+	Trashed   int
+	Someday   int
+	Done      int
+	Waiting   int
+	Refiled   int
+	ToProject int
+	Skipped   int
+}
+
+// InboxSessionItem is the current original item plus its draft.
+type InboxSessionItem struct {
+	Original model.Task
+	Draft    model.Task
+	Step     InboxStep
+}
+
+// InboxSession is the client-visible Process Inbox session state.
+type InboxSession struct {
+	ID       string
+	Items    []model.Task
+	Index    int
+	Current  InboxSessionItem
+	Progress InboxSessionProgress
+	Summary  InboxSessionSummary
+	Done     bool
+}
+
 // Core is the first-pass concrete implementation of the core boundary.
 // It currently wraps the existing service/store/query architecture rather than
 // replacing it.
 type Core struct {
-	store *store.Store
-	svc   *service.Service
-	cfg   CoreConfig
+	store    *store.Store
+	svc      *service.Service
+	cfg      CoreConfig
+	sessions map[string]*InboxSession
 }
 
 // New constructs a first-pass core facade over the existing service layer.
@@ -78,9 +135,10 @@ func New(st *store.Store, cfg CoreConfig) *Core {
 		AutoArchiveCanceled: cfg.AutoArchiveCanceled,
 	}
 	return &Core{
-		store: st,
-		svc:   service.NewWithBehavior(st, behavior),
-		cfg:   cfg,
+		store:    st,
+		svc:      service.NewWithBehavior(st, behavior),
+		cfg:      cfg,
+		sessions: map[string]*InboxSession{},
 	}
 }
 
@@ -96,6 +154,83 @@ func (c *Core) UnderlyingStore() *store.Store { return c.store }
 // supplied config views overriding built-ins by name.
 func (c *Core) MergedSavedViews() []model.SavedView {
 	return mergeSavedViews(model.DefaultViews(), c.cfg.SavedViews)
+}
+
+func cloneTasks(tasks []model.Task) []model.Task {
+	out := make([]model.Task, len(tasks))
+	copy(out, tasks)
+	return out
+}
+
+func buildInboxSession(id string, items []model.Task, index int, summary InboxSessionSummary) *InboxSession {
+	session := &InboxSession{
+		ID:      id,
+		Items:   cloneTasks(items),
+		Index:   index,
+		Summary: summary,
+	}
+	if index >= len(items) {
+		session.Done = true
+		session.Current = InboxSessionItem{Step: InboxStepComplete}
+		session.Progress = InboxSessionProgress{Current: len(items), Total: len(items)}
+		return session
+	}
+	session.Progress = InboxSessionProgress{Current: index + 1, Total: len(items)}
+	task := items[index]
+	session.Current = InboxSessionItem{
+		Original: task,
+		Draft:    task,
+		Step:     InboxStepActionable,
+	}
+	return session
+}
+
+// StartInboxSession snapshots the inbox into a new ephemeral processing session.
+func (c *Core) StartInboxSession() (*InboxSession, error) {
+	list, err := c.store.ReadList(model.ListIn)
+	if err != nil {
+		return nil, err
+	}
+	sessionID := fmt.Sprintf("inbox-%d", time.Now().UnixNano())
+	session := buildInboxSession(sessionID, list.Tasks, 0, InboxSessionSummary{})
+	c.sessions[sessionID] = session
+	return session, nil
+}
+
+// GetInboxSession returns the current state of an existing processing session.
+func (c *Core) GetInboxSession(sessionID string) (*InboxSession, error) {
+	session, ok := c.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("inbox session %q not found", sessionID)
+	}
+	copy := *session
+	copy.Items = cloneTasks(session.Items)
+	return &copy, nil
+}
+
+// SkipInboxItem advances the session to the next item without mutating storage.
+func (c *Core) SkipInboxItem(sessionID string) (*InboxSession, error) {
+	session, ok := c.sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("inbox session %q not found", sessionID)
+	}
+	if session.Done {
+		return c.GetInboxSession(sessionID)
+	}
+	summary := session.Summary
+	summary.Skipped++
+	next := buildInboxSession(session.ID, session.Items, session.Index+1, summary)
+	c.sessions[sessionID] = next
+	return c.GetInboxSession(sessionID)
+}
+
+// DiscardInboxSession drops an ephemeral processing session.
+func (c *Core) DiscardInboxSession(sessionID string) error {
+	if _, ok := c.sessions[sessionID]; !ok {
+		return fmt.Errorf("inbox session %q not found", sessionID)
+	}
+	delete(c.sessions, sessionID)
+	return nil
 }
 
 func mergeSavedViews(builtins, configured []model.SavedView) []model.SavedView {

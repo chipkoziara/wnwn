@@ -252,6 +252,7 @@ This phase requires zero changes to wnwn core — it's purely external tooling l
 - **The core is a library.** It doesn't read files from disk, load config, or know about network transport. Callers do that and pass results in.
 - **Process Inbox is a core-owned workflow.** The core exposes the current step and valid actions, owns an in-memory draft during the session, and only final actions commit atomically.
 - **Process Inbox sessions are ephemeral.** They are not durable or resumable in Phase 1; client exit/disconnect discards the draft.
+- **Extract workflow ownership before polishing Process Inbox UX.** During migration, keep Bubble Tea input widgets, focus handling, and rendering in the TUI, but move session truth, draft truth, transition validation, and final typed commit orchestration into the core in small slices.
 - **CoreConfig is passed in, not loaded.** The core accepts a `CoreConfig` struct at init time. It doesn't care whether it came from TOML, a database row, environment variables, or hardcoded test defaults.
 - **The HTTP adapter pattern is the pragmatic path for non-Go clients.** Avoids FFI/gomobile complexity while keeping the core in Go. A native iOS app, a web UI, and a local AI agent can all speak HTTP to the same Service.
 - **Markdown export is both a feature and a resilience mechanism.** It's an interchange format, backup format, and recovery path if SQLite gets corrupted.

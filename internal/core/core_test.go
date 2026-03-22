@@ -576,4 +576,68 @@ func TestMoveTaskCoreAPIs(t *testing.T) {
 	}
 }
 
+func TestInboxSessionLifecycle(t *testing.T) {
+	c := newTestCore(t)
+	inbox, err := c.store.ReadList(model.ListIn)
+	if err != nil {
+		t.Fatalf("read inbox: %v", err)
+	}
+	inbox.Tasks = append(inbox.Tasks,
+		model.Task{ID: id.New(), Created: time.Now(), Text: "First"},
+		model.Task{ID: id.New(), Created: time.Now(), Text: "Second"},
+	)
+	if err := c.store.WriteList(inbox); err != nil {
+		t.Fatalf("write inbox: %v", err)
+	}
+
+	session, err := c.StartInboxSession()
+	if err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+	if session.ID == "" {
+		t.Fatalf("expected session ID")
+	}
+	if session.Done {
+		t.Fatalf("expected active session")
+	}
+	if session.Progress.Current != 1 || session.Progress.Total != 2 {
+		t.Fatalf("unexpected progress: %+v", session.Progress)
+	}
+	if session.Current.Step != InboxStepActionable || session.Current.Original.Text != "First" || session.Current.Draft.Text != "First" {
+		t.Fatalf("unexpected current item: %+v", session.Current)
+	}
+
+	next, err := c.SkipInboxItem(session.ID)
+	if err != nil {
+		t.Fatalf("skip item: %v", err)
+	}
+	if next.Progress.Current != 2 || next.Progress.Total != 2 {
+		t.Fatalf("unexpected progress after skip: %+v", next.Progress)
+	}
+	if next.Summary.Skipped != 1 {
+		t.Fatalf("expected skipped count to increment, got %+v", next.Summary)
+	}
+	if next.Current.Original.Text != "Second" {
+		t.Fatalf("expected second item after skip, got %+v", next.Current)
+	}
+
+	doneSession, err := c.SkipInboxItem(session.ID)
+	if err != nil {
+		t.Fatalf("skip final item: %v", err)
+	}
+	if !doneSession.Done || doneSession.Current.Step != InboxStepComplete {
+		t.Fatalf("expected completed session, got %+v", doneSession)
+	}
+	if doneSession.Summary.Skipped != 2 {
+		t.Fatalf("expected both items skipped, got %+v", doneSession.Summary)
+	}
+
+	if err := c.DiscardInboxSession(session.ID); err != nil {
+		t.Fatalf("discard session: %v", err)
+	}
+	if _, err := c.GetInboxSession(session.ID); err == nil {
+		t.Fatalf("expected discarded session lookup to fail")
+	}
+}
+
 func timePtr(t time.Time) *time.Time { return &t }

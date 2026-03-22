@@ -221,12 +221,13 @@ type Model struct {
 	scrollOffset    int                // top row offset for scrollable list-style views
 
 	// Process inbox state.
-	processItems []model.Task // snapshot of inbox tasks taken at activation
-	processIdx   int          // index of the current item being processed (0-based)
-	processStep  processStep  // current step in the decision tree
-	processTask  model.Task   // working copy of the current item (mutated during enrichment)
-	processTags  []string     // tag accumulator for stepEnrichTags (tab-separated entry)
-	processStats processStats // running totals for the completion summary
+	processSessionID string       // active core-owned process inbox session ID
+	processItems     []model.Task // snapshot of inbox tasks taken at activation
+	processIdx       int          // index of the current item being processed (0-based)
+	processStep      processStep  // current step in the decision tree
+	processTask      model.Task   // working copy of the current item (mutated during enrichment)
+	processTags      []string     // tag accumulator for stepEnrichTags (tab-separated entry)
+	processStats     processStats // running totals for the completion summary
 
 	weeklyReviewData    service.WeeklyReviewData
 	weeklyReviewStep    weeklyReviewStep
@@ -634,8 +635,8 @@ type projectUpdatedMsg struct {
 }
 type errMsg struct{ err error }
 
-// processInboxLoadedMsg carries the inbox snapshot when entering process inbox mode.
-type processInboxLoadedMsg struct{ tasks []model.Task }
+// processInboxLoadedMsg carries the core-owned inbox session state when entering process mode.
+type processInboxLoadedMsg struct{ session *core.InboxSession }
 
 // processAdvancedMsg signals that the current item was acted on and we should advance.
 // The action field is used to update processStats.
@@ -648,6 +649,39 @@ type weeklyReviewLoadedMsg struct {
 
 type clearPrefixMsg struct{}
 type undoCountdownMsg struct{ seq int }
+
+func stepFromCore(step core.InboxStep) processStep {
+	switch step {
+	case core.InboxStepActionable:
+		return stepActionable
+	case core.InboxStepNotActionable:
+		return stepNotActionable
+	case core.InboxStepEnrich:
+		return stepEnrich
+	case core.InboxStepRoute:
+		return stepRoute
+	case core.InboxStepWaitingOn:
+		return stepWaitingOn
+	case core.InboxStepNewProject:
+		return stepNewProject
+	case core.InboxStepComplete:
+		return stepComplete
+	default:
+		return stepActionable
+	}
+}
+
+func processStatsFromCore(summary core.InboxSessionSummary) processStats {
+	return processStats{
+		trashed:   summary.Trashed,
+		someday:   summary.Someday,
+		done:      summary.Done,
+		waiting:   summary.Waiting,
+		refiled:   summary.Refiled,
+		toProject: summary.ToProject,
+		skipped:   summary.Skipped,
+	}
+}
 
 // Update handles messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -768,15 +802,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.loadProjects, m.clearStatusAfter())
 
 	case processInboxLoadedMsg:
-		if len(msg.tasks) == 0 {
+		if msg.session == nil || len(msg.session.Items) == 0 {
 			m.statusMsg = "Inbox is empty — nothing to process"
 			return m, m.clearStatusAfter()
 		}
-		m.processItems = msg.tasks
-		m.processIdx = 0
-		m.processStep = stepActionable
-		m.processTask = msg.tasks[0]
-		m.processStats = processStats{}
+		m.processSessionID = msg.session.ID
+		m.processItems = msg.session.Items
+		m.processIdx = msg.session.Index
+		m.processStep = stepFromCore(msg.session.Current.Step)
+		m.processTask = msg.session.Current.Draft
+		m.processStats = processStatsFromCore(msg.session.Summary)
 		m.view = viewProcessInbox
 		m.currentList = model.ListIn
 		return m, nil
@@ -1419,13 +1454,13 @@ func (m Model) updateNormal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// loadInboxForProcessing reads the inbox and returns a processInboxLoadedMsg to kick off process mode.
+// loadInboxForProcessing starts a core-owned inbox session and returns it to kick off process mode.
 func (m Model) loadInboxForProcessing() tea.Msg {
-	list, err := m.store.ReadList(model.ListIn)
+	session, err := m.core.StartInboxSession()
 	if err != nil {
 		return errMsg{err}
 	}
-	return processInboxLoadedMsg{tasks: list.Tasks}
+	return processInboxLoadedMsg{session: session}
 }
 
 // refileTask moves a task from the current list to a destination list.
@@ -1485,6 +1520,18 @@ func (m Model) setStateWaiting(taskID, text string) tea.Cmd {
 // advanceProcessInbox moves to the next item after an action completes.
 // If all items are processed it switches to the completion step.
 func (m *Model) advanceProcessInbox() {
+	if m.processSessionID != "" {
+		session, err := m.core.SkipInboxItem(m.processSessionID)
+		if err == nil {
+			m.processItems = session.Items
+			m.processIdx = session.Index
+			m.processStep = stepFromCore(session.Current.Step)
+			m.processTask = session.Current.Draft
+			m.processStats = processStatsFromCore(session.Summary)
+			m.processTags = nil
+			return
+		}
+	}
 	m.processIdx++
 	if m.processIdx >= len(m.processItems) {
 		m.processStep = stepComplete
