@@ -4461,13 +4461,7 @@ func (m Model) weeklyTaskStateChange(newState model.TaskState) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		var err error
-		if vt.IsProject {
-			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, newState)
-		} else {
-			err = m.svc.UpdateState(vt.ListType, vt.Task.ID, newState)
-		}
-		if err != nil {
+		if _, err := m.core.UpdateTask(vt.Task.ID, core.TaskPatch{State: &newState}); err != nil {
 			return errMsg{err}
 		}
 		return m.loadWeeklyReview()
@@ -4480,13 +4474,7 @@ func (m Model) weeklyTaskArchive() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		var err error
-		if vt.IsProject {
-			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
-		} else {
-			err = m.core.ArchiveTask(vt.Task.ID)
-		}
-		if err != nil {
+		if err := m.core.ArchiveTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
 		return m.loadWeeklyReview()
@@ -4499,13 +4487,7 @@ func (m Model) weeklyTaskTrash() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		var err error
-		if vt.IsProject {
-			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
-		} else {
-			err = m.core.TrashTask(vt.Task.ID)
-		}
-		if err != nil {
+		if err := m.core.TrashTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
 		return m.loadWeeklyReview()
@@ -5035,14 +5017,8 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 	queryStr := m.activeViewQuery
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
-		var err error
 		oldState := vt.Task.State
-		if vt.IsProject {
-			err = m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, newState)
-		} else {
-			err = m.svc.UpdateState(vt.ListType, vt.Task.ID, newState)
-		}
-		if err != nil {
+		if _, err := m.core.UpdateTask(vt.Task.ID, core.TaskPatch{State: &newState}); err != nil {
 			return errMsg{err}
 		}
 		// Re-collect and re-filter.
@@ -5058,10 +5034,8 @@ func (m Model) viewResultStateChange(newState model.TaskState) tea.Cmd {
 			}
 		}
 		undoApply := func() error {
-			if vt.IsProject {
-				return m.svc.UpdateProjectTaskState(vt.Filename, vt.SgIdx, vt.Task.ID, oldState)
-			}
-			return m.svc.UpdateState(vt.ListType, vt.Task.ID, oldState)
+			_, err := m.core.UpdateTask(vt.Task.ID, core.TaskPatch{State: &oldState})
+			return err
 		}
 		return viewResultsLoadedMsg{name: name, queryStr: queryStr, includeArchived: includeArchived, results: filtered, undoApply: undoApply, undoPrompt: "State updated", undoSuccess: fmt.Sprintf("Restored: %s", vt.Task.Text)}
 	}
@@ -5077,17 +5051,7 @@ func (m Model) viewResultTrash() tea.Cmd {
 	queryStr := m.activeViewQuery
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
-		var err error
-		source := vt.Task.Source
-		if source == "" {
-			source = vt.Source
-		}
-		if vt.IsProject {
-			err = m.svc.TrashProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
-		} else {
-			err = m.core.TrashTask(vt.Task.ID)
-		}
-		if err != nil {
+		if err := m.core.TrashTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
 		clauses, _ := query.Parse(queryStr, time.Now())
@@ -5119,13 +5083,7 @@ func (m Model) viewResultArchive() tea.Cmd {
 	queryStr := m.activeViewQuery
 	includeArchived := m.activeViewInclA
 	return func() tea.Msg {
-		var err error
-		if vt.IsProject {
-			err = m.svc.ArchiveProjectTask(vt.Filename, vt.SgIdx, vt.Task.ID)
-		} else {
-			err = m.core.ArchiveTask(vt.Task.ID)
-		}
-		if err != nil {
+		if err := m.core.ArchiveTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
 		clauses, _ := query.Parse(queryStr, time.Now())
