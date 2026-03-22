@@ -2,6 +2,8 @@
 
 Last updated: 2026-03-22 (session 27)
 
+Architecture milestone recap: see `docs/architecture-milestone-summary-2026-03-22.md`.
+
 ## What This Is
 
 A Getting Things Done (GTD) inspired TUI app built in Go with Bubbletea v2, Lipgloss v2, and Bubbles v2. The spec is in `BRD.md`. SQLite is the runtime data store, with Markdown import/export for portability.
