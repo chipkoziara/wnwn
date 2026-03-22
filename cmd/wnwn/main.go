@@ -13,8 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/chipkoziara/wnwn/internal/config"
+	"github.com/chipkoziara/wnwn/internal/core"
 	"github.com/chipkoziara/wnwn/internal/model"
-	"github.com/chipkoziara/wnwn/internal/query"
 	"github.com/chipkoziara/wnwn/internal/service"
 	"github.com/chipkoziara/wnwn/internal/store"
 	"github.com/chipkoziara/wnwn/internal/tui"
@@ -116,14 +116,14 @@ func cmdAdd(args []string) {
 		os.Exit(1)
 	}
 	text := strings.Join(textParts, " ")
-	var opts []service.TaskOption
+	var capture core.CaptureOpts
 	if deadline != "" {
 		t, err := parseTimeArg(deadline)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: invalid deadline %q: %v\n", deadline, err)
 			os.Exit(1)
 		}
-		opts = append(opts, service.WithDeadline(t))
+		capture.Deadline = &t
 	}
 	if scheduled != "" {
 		t, err := parseTimeArg(scheduled)
@@ -131,19 +131,19 @@ func cmdAdd(args []string) {
 			fmt.Fprintf(os.Stderr, "error: invalid scheduled date %q: %v\n", scheduled, err)
 			os.Exit(1)
 		}
-		opts = append(opts, service.WithScheduled(t))
+		capture.Scheduled = &t
 	}
 	if url != "" {
-		opts = append(opts, service.WithURL(url))
+		capture.URL = url
 	}
 	if notes != "" {
-		opts = append(opts, service.WithNotes(notes))
+		capture.Notes = notes
 	}
 	if len(tags) > 0 {
-		opts = append(opts, service.WithTags([]string(tags)))
+		capture.Tags = []string(tags)
 	}
-	_, svc := initStoreAndService()
-	task, err := svc.AddToInbox(text, opts...)
+	_, _, c := initStoreServiceAndCore()
+	task, err := c.CaptureToInbox(text, capture)
 	if err != nil {
 		fatalf("error: %v\n", err)
 	}
@@ -208,9 +208,9 @@ func cmdQuery(args []string) {
 	if tasksOnly && projectsOnly {
 		fatalf("error: --tasks and --projects are mutually exclusive\n")
 	}
-	_, svc := initStoreAndService()
+	_, _, c := initStoreServiceAndCore()
 	if !projectsOnly {
-		tasks, err := queryTasksCLI(svc, queryStr, includeArchived)
+		tasks, err := queryTasksCLI(c, queryStr, includeArchived)
 		if err != nil {
 			fatalf("error: %v\n", err)
 		}
@@ -225,7 +225,7 @@ func cmdQuery(args []string) {
 			return
 		}
 	}
-	projects, err := queryProjectsCLI(svc, queryStr)
+	projects, err := queryProjectsCLI(c, queryStr)
 	if err != nil {
 		fatalf("error: %v\n", err)
 	}
@@ -274,10 +274,10 @@ func cmdUpdate(args []string) {
 	if (taskID == "" && projectID == "") || (taskID != "" && projectID != "") {
 		fatalf("error: specify exactly one of --task-id or --project-id\n")
 	}
-	st, svc := initStoreAndService()
+	st, svc, c := initStoreServiceAndCore()
 	clearSet := parseCSVSet(clearCSV)
 	if taskID != "" {
-		updated, result, err := updateTaskCLI(st, svc, taskID, taskUpdateInput{
+		updated, result, err := updateTaskCLI(st, svc, c, taskID, taskUpdateInput{
 			Text:      text,
 			State:     state,
 			Deadline:  deadline,
@@ -298,7 +298,7 @@ func cmdUpdate(args []string) {
 		}
 		return
 	}
-	updated, result, err := updateProjectCLI(st, svc, projectID, projectUpdateInput{
+	updated, result, err := updateProjectCLI(st, svc, c, projectID, projectUpdateInput{
 		Title:     title,
 		State:     state,
 		Deadline:  deadline,
@@ -339,130 +339,91 @@ type projectUpdateInput struct {
 	Clear     map[string]bool
 }
 
-func updateTaskCLI(st *store.Store, svc *service.Service, taskID string, in taskUpdateInput) (model.Task, cliTaskResult, error) {
-	loc, idx, task, err := findTaskByID(st, taskID)
-	if err != nil {
-		return model.Task{}, cliTaskResult{}, err
-	}
+func updateTaskCLI(_ *store.Store, _ *service.Service, c *core.Core, taskID string, in taskUpdateInput) (model.Task, cliTaskResult, error) {
+	patch := core.TaskPatch{Clear: sortedClearFields(in.Clear)}
 	if in.Text != "" {
-		task.Text = in.Text
+		patch.Text = &in.Text
 	}
 	if in.State != "" {
 		parsed, err := parseTaskState(in.State)
 		if err != nil {
 			return model.Task{}, cliTaskResult{}, err
 		}
-		task.State = parsed
+		patch.State = &parsed
 	}
 	if in.TagsCSV != "" {
-		task.Tags = parseCSV(in.TagsCSV)
+		tags := parseCSV(in.TagsCSV)
+		patch.Tags = &tags
 	}
 	if in.URL != "" {
-		task.URL = in.URL
+		patch.URL = &in.URL
 	}
 	if in.Notes != "" {
-		task.Notes = in.Notes
+		patch.Notes = &in.Notes
 	}
 	if in.WaitingOn != "" {
-		task.WaitingOn = in.WaitingOn
+		patch.WaitingOn = &in.WaitingOn
 	}
 	if in.Deadline != "" {
 		t, err := parseTimeArg(in.Deadline)
 		if err != nil {
 			return model.Task{}, cliTaskResult{}, err
 		}
-		task.Deadline = &t
+		patch.Deadline = &t
 	}
 	if in.Scheduled != "" {
 		t, err := parseTimeArg(in.Scheduled)
 		if err != nil {
 			return model.Task{}, cliTaskResult{}, err
 		}
-		task.Scheduled = &t
+		patch.Scheduled = &t
 	}
-	if in.Clear["deadline"] {
-		task.Deadline = nil
+	loc, err := c.UpdateTask(taskID, patch)
+	if err != nil {
+		return model.Task{}, cliTaskResult{}, err
 	}
-	if in.Clear["scheduled"] {
-		task.Scheduled = nil
-	}
-	if in.Clear["tags"] {
-		task.Tags = nil
-	}
-	if in.Clear["url"] {
-		task.URL = ""
-	}
-	if in.Clear["notes"] {
-		task.Notes = ""
-	}
-	if in.Clear["waiting_on"] || in.Clear["waiting-on"] {
-		task.WaitingOn = ""
-	}
-	if loc.isProject {
-		if err := svc.UpdateProjectTask(loc.filename, idx, task); err != nil {
-			return model.Task{}, cliTaskResult{}, err
-		}
-	} else {
-		if err := svc.UpdateTask(loc.listType, task); err != nil {
-			return model.Task{}, cliTaskResult{}, err
-		}
-	}
-	res := cliTaskFromViewTask(service.ViewTask{Task: task, Source: loc.source, Filename: loc.filename, SgIdx: idx, ListType: loc.listType, IsProject: loc.isProject}, loc.subGroupTitle)
-	return task, res, nil
+	res := cliTaskFromViewTask(service.ViewTask{Task: loc.Task, Source: loc.Source, Filename: loc.Filename, SgIdx: loc.SubgroupIx, ListType: loc.ListType, IsProject: loc.Kind == core.TaskLocationProject}, "")
+	return loc.Task, res, nil
 }
 
-func updateProjectCLI(st *store.Store, svc *service.Service, projectID string, in projectUpdateInput) (model.Project, cliProjectResult, error) {
-	filename, proj, err := findProjectByID(st, projectID)
-	if err != nil {
-		return model.Project{}, cliProjectResult{}, err
-	}
+func updateProjectCLI(_ *store.Store, _ *service.Service, c *core.Core, projectID string, in projectUpdateInput) (model.Project, cliProjectResult, error) {
+	patch := core.ProjectPatch{Clear: sortedClearFields(in.Clear)}
 	if in.Title != "" {
-		proj.Title = in.Title
+		patch.Title = &in.Title
 	}
 	if in.State != "" {
 		parsed, err := parseProjectState(in.State)
 		if err != nil {
 			return model.Project{}, cliProjectResult{}, err
 		}
-		proj.State = parsed
+		patch.State = &parsed
 	}
 	if in.TagsCSV != "" {
-		proj.Tags = parseCSV(in.TagsCSV)
+		tags := parseCSV(in.TagsCSV)
+		patch.Tags = &tags
 	}
 	if in.URL != "" {
-		proj.URL = in.URL
+		patch.URL = &in.URL
 	}
 	if in.WaitingOn != "" {
-		proj.WaitingOn = in.WaitingOn
+		patch.WaitingOn = &in.WaitingOn
 	}
 	if in.Deadline != "" {
 		t, err := parseTimeArg(in.Deadline)
 		if err != nil {
 			return model.Project{}, cliProjectResult{}, err
 		}
-		proj.Deadline = &t
+		patch.Deadline = &t
 	}
-	if in.Clear["deadline"] {
-		proj.Deadline = nil
-	}
-	if in.Clear["tags"] {
-		proj.Tags = nil
-	}
-	if in.Clear["url"] {
-		proj.URL = ""
-	}
-	if in.Clear["waiting_on"] || in.Clear["waiting-on"] {
-		proj.WaitingOn = ""
-	}
-	newFilename, err := svc.UpdateProject(filename, *proj)
+	updated, err := c.UpdateProject(projectID, patch)
 	if err != nil {
 		return model.Project{}, cliProjectResult{}, err
 	}
-	res := cliProjectResult{Kind: "project", ID: proj.ID, Title: proj.Title, State: proj.State, Filename: newFilename, Tags: proj.Tags, URL: proj.URL, WaitingOn: proj.WaitingOn}
-	if proj.Deadline != nil {
-		res.Deadline = formatTime(*proj.Deadline)
+	res := cliProjectResult{Kind: "project", ID: updated.Project.ID, Title: updated.Project.Title, State: updated.Project.State, Filename: updated.Filename, Tags: updated.Project.Tags, URL: updated.Project.URL, WaitingOn: updated.Project.WaitingOn}
+	if updated.Project.Deadline != nil {
+		res.Deadline = formatTime(*updated.Project.Deadline)
 	}
-	return *proj, res, nil
+	return updated.Project, res, nil
 }
 
 type taskLocation struct {
@@ -522,56 +483,29 @@ func findProjectByID(st *store.Store, projectID string) (string, *model.Project,
 	return "", nil, fmt.Errorf("project %s not found", projectID)
 }
 
-func queryTasksCLI(svc *service.Service, queryStr string, includeArchived bool) ([]cliTaskResult, error) {
-	all, err := svc.CollectAllTasks()
+func queryTasksCLI(c *core.Core, queryStr string, includeArchived bool) ([]cliTaskResult, error) {
+	all, err := c.RunQuery(core.QueryInput{Query: queryStr, IncludeArchived: includeArchived})
 	if err != nil {
 		return nil, err
 	}
-	if includeArchived {
-		archived, err := svc.CollectArchiveTasks()
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, archived...)
-	}
-	expr, err := query.Parse(queryStr, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	results := make([]cliTaskResult, 0)
+	results := make([]cliTaskResult, 0, len(all))
 	for _, vt := range all {
-		if !query.MatchAll(expr, vt.Task, vt.Source) {
-			continue
-		}
 		results = append(results, cliTaskFromViewTask(vt, ""))
 	}
 	sort.SliceStable(results, func(i, j int) bool { return results[i].ID < results[j].ID })
 	return results, nil
 }
 
-func queryProjectsCLI(svc *service.Service, queryStr string) ([]cliProjectResult, error) {
-	st := svc.Store
-	files, err := st.ListProjects()
+func queryProjectsCLI(c *core.Core, queryStr string) ([]cliProjectResult, error) {
+	projects, err := c.QueryProjects(core.QueryInput{Query: queryStr})
 	if err != nil {
 		return nil, err
 	}
-	results := make([]cliProjectResult, 0, len(files))
-	expr, err := query.Parse(queryStr, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	for _, fn := range files {
-		proj, err := st.ReadProject(fn)
-		if err != nil {
-			return nil, err
-		}
-		pseudo := model.Task{ID: proj.ID, Created: time.Now(), Text: proj.Title, State: proj.State, Deadline: proj.Deadline, Tags: proj.Tags, URL: proj.URL, WaitingOn: proj.WaitingOn}
-		if expr != nil && !query.MatchAll(expr, pseudo, "projects/"+fn) {
-			continue
-		}
-		res := cliProjectResult{Kind: "project", ID: proj.ID, Title: proj.Title, State: proj.State, Filename: fn, Tags: proj.Tags, URL: proj.URL, WaitingOn: proj.WaitingOn}
-		if proj.Deadline != nil {
-			res.Deadline = formatTime(*proj.Deadline)
+	results := make([]cliProjectResult, 0, len(projects))
+	for _, p := range projects {
+		res := cliProjectResult{Kind: "project", ID: p.Project.ID, Title: p.Project.Title, State: p.Project.State, Filename: p.Filename, Tags: p.Project.Tags, URL: p.Project.URL, WaitingOn: p.Project.WaitingOn}
+		if p.Project.Deadline != nil {
+			res.Deadline = formatTime(*p.Project.Deadline)
 		}
 		results = append(results, res)
 	}
@@ -590,7 +524,7 @@ func cliTaskFromViewTask(vt service.ViewTask, subgroup string) cliTaskResult {
 	return res
 }
 
-func initStoreAndService() (*store.Store, *service.Service) {
+func initStoreServiceAndCore() (*store.Store, *service.Service, *core.Core) {
 	dataDir := getDataDir()
 	s := store.New(dataDir)
 	if err := s.Init(); err != nil {
@@ -600,8 +534,28 @@ func initStoreAndService() (*store.Store, *service.Service) {
 	if err != nil {
 		fatalf("error: loading config: %v\n", err)
 	}
-	svc := service.NewWithBehavior(s, service.BehaviorConfig{AutoArchiveDone: cfg.Archive.AutoArchiveDone, AutoArchiveCanceled: cfg.Archive.AutoArchiveCanceled})
-	return s, svc
+	var savedViews []model.SavedView
+	for _, v := range cfg.Views.Saved {
+		savedViews = append(savedViews, model.SavedView{Name: v.Name, Query: v.Query, IncludeArchived: v.IncludeArchived})
+	}
+	coreCfg := core.CoreConfig{
+		AutoArchiveDone:     cfg.Archive.AutoArchiveDone,
+		AutoArchiveCanceled: cfg.Archive.AutoArchiveCanceled,
+		SavedViews:          savedViews,
+	}
+	c := core.New(s, coreCfg)
+	return s, c.UnderlyingService(), c
+}
+
+func sortedClearFields(clear map[string]bool) []string {
+	out := make([]string, 0, len(clear))
+	for field, enabled := range clear {
+		if enabled {
+			out = append(out, field)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func printJSON(v any) {
@@ -674,18 +628,8 @@ func cmdExportMarkdown(args []string) {
 		fmt.Fprintln(os.Stderr, "error: --out is required")
 		os.Exit(1)
 	}
-	dataDir := getDataDir()
-	src := store.New(dataDir)
-	if err := src.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: initializing source backend: %v\n", err)
-		os.Exit(1)
-	}
-	dst := store.NewMarkdown(outDir)
-	if err := dst.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: initializing markdown destination: %v\n", err)
-		os.Exit(1)
-	}
-	if err := copyAllData(src, dst); err != nil {
+	_, _, c := initStoreServiceAndCore()
+	if err := c.ExportMarkdown(outDir); err != nil {
 		fmt.Fprintf(os.Stderr, "error: exporting markdown: %v\n", err)
 		os.Exit(1)
 	}
@@ -725,18 +669,8 @@ func cmdImportMarkdown(args []string) {
 		fmt.Fprintf(os.Stderr, "error: invalid --mode %q (expected merge or replace)\n", mode)
 		os.Exit(1)
 	}
-	dataDir := getDataDir()
-	src := store.NewMarkdown(fromDir)
-	if err := src.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: initializing markdown source: %v\n", err)
-		os.Exit(1)
-	}
-	dst := store.New(dataDir)
-	if err := dst.Init(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: initializing destination backend: %v\n", err)
-		os.Exit(1)
-	}
-	stats, err := importMarkdownData(src, dst, mode, dryRun)
+	_, _, c := initStoreServiceAndCore()
+	result, err := c.ImportMarkdown(core.ImportInput{Dir: fromDir, Mode: core.ImportMode(mode), DryRun: dryRun})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: importing markdown: %v\n", err)
 		os.Exit(1)
@@ -746,242 +680,16 @@ func cmdImportMarkdown(args []string) {
 	} else {
 		fmt.Printf("Imported Markdown data from: %s (mode: %s)\n", fromDir, mode)
 	}
-	fmt.Printf("  source inbox tasks: %d\n", stats.SourceInboxTasks)
-	fmt.Printf("  source actions tasks: %d\n", stats.SourceActionTasks)
-	fmt.Printf("  source projects: %d (%d tasks)\n", stats.SourceProjects, stats.SourceProjectTasks)
-	fmt.Printf("  source archives: %d (%d tasks)\n", stats.SourceArchives, stats.SourceArchiveTasks)
 	if mode == "replace" {
-		fmt.Printf("  destination reset: %t\n", stats.DestinationReset)
+		fmt.Printf("  destination reset: %t\n", result.Reset)
 	}
-	fmt.Printf("  tasks added to inbox: %d\n", stats.AddedInboxTasks)
-	fmt.Printf("  tasks added to actions: %d\n", stats.AddedActionTasks)
-	fmt.Printf("  projects added/skipped: %d/%d\n", stats.AddedProjects, stats.SkippedProjects)
-	fmt.Printf("  archive tasks added/skipped: %d/%d\n", stats.AddedArchiveTasks, stats.SkippedArchiveTasks)
+	fmt.Printf("  tasks added to inbox: %d\n", result.InboxAdded)
+	fmt.Printf("  tasks added to actions: %d\n", result.ActionsAdded)
+	fmt.Printf("  projects added: %d\n", result.ProjectsAdded)
+	fmt.Printf("  archive tasks added: %d\n", result.ArchivedAdded)
 	if dryRun {
 		fmt.Println("  no data was written")
 	}
-}
-
-type importStats struct {
-	SourceInboxTasks   int
-	SourceActionTasks  int
-	SourceProjects     int
-	SourceProjectTasks int
-	SourceArchives     int
-	SourceArchiveTasks int
-
-	DestinationReset    bool
-	AddedInboxTasks     int
-	AddedActionTasks    int
-	AddedProjects       int
-	SkippedProjects     int
-	AddedArchiveTasks   int
-	SkippedArchiveTasks int
-}
-
-func importMarkdownData(src *store.Store, dst *store.Store, mode string, dryRun bool) (importStats, error) {
-	stats := importStats{}
-	inboxSrc, err := src.ReadList(model.ListIn)
-	if err != nil {
-		return stats, fmt.Errorf("reading source inbox: %w", err)
-	}
-	actionsSrc, err := src.ReadList(model.ListSingleActions)
-	if err != nil {
-		return stats, fmt.Errorf("reading source single-actions: %w", err)
-	}
-	stats.SourceInboxTasks = len(inboxSrc.Tasks)
-	stats.SourceActionTasks = len(actionsSrc.Tasks)
-	projectFiles, err := src.ListProjects()
-	if err != nil {
-		return stats, fmt.Errorf("listing source projects: %w", err)
-	}
-	stats.SourceProjects = len(projectFiles)
-	archiveFiles, err := src.ListArchives()
-	if err != nil {
-		return stats, fmt.Errorf("listing source archives: %w", err)
-	}
-	stats.SourceArchives = len(archiveFiles)
-	for _, filename := range projectFiles {
-		proj, err := src.ReadProject(filename)
-		if err != nil {
-			return stats, fmt.Errorf("reading source project %s: %w", filename, err)
-		}
-		for _, sg := range proj.SubGroups {
-			stats.SourceProjectTasks += len(sg.Tasks)
-		}
-	}
-	for _, filename := range archiveFiles {
-		archive, err := src.ReadArchive(filename)
-		if err != nil {
-			return stats, fmt.Errorf("reading source archive %s: %w", filename, err)
-		}
-		stats.SourceArchiveTasks += len(archive.Tasks)
-	}
-	if mode == "replace" {
-		stats.DestinationReset = true
-		stats.AddedInboxTasks = stats.SourceInboxTasks
-		stats.AddedActionTasks = stats.SourceActionTasks
-		stats.AddedProjects = stats.SourceProjects
-		stats.AddedArchiveTasks = stats.SourceArchiveTasks
-		if dryRun {
-			return stats, nil
-		}
-		if err := dst.Reset(); err != nil {
-			return stats, fmt.Errorf("resetting destination: %w", err)
-		}
-		if err := dst.Init(); err != nil {
-			return stats, fmt.Errorf("reinitializing destination: %w", err)
-		}
-		if err := copyAllData(src, dst); err != nil {
-			return stats, err
-		}
-		return stats, nil
-	}
-	inboxDst, err := dst.ReadList(model.ListIn)
-	if err != nil {
-		return stats, fmt.Errorf("reading destination inbox: %w", err)
-	}
-	actionsDst, err := dst.ReadList(model.ListSingleActions)
-	if err != nil {
-		return stats, fmt.Errorf("reading destination single-actions: %w", err)
-	}
-	inboxMerged, addedInbox, _ := mergeTasksByID(inboxDst.Tasks, inboxSrc.Tasks)
-	actionsMerged, addedActions, _ := mergeTasksByID(actionsDst.Tasks, actionsSrc.Tasks)
-	stats.AddedInboxTasks = addedInbox
-	stats.AddedActionTasks = addedActions
-	if !dryRun {
-		inboxDst.Tasks = inboxMerged
-		actionsDst.Tasks = actionsMerged
-		if err := dst.WriteList(inboxDst); err != nil {
-			return stats, fmt.Errorf("writing destination inbox: %w", err)
-		}
-		if err := dst.WriteList(actionsDst); err != nil {
-			return stats, fmt.Errorf("writing destination single-actions: %w", err)
-		}
-	}
-	dstProjects, err := dst.ListProjects()
-	if err != nil {
-		return stats, fmt.Errorf("listing destination projects: %w", err)
-	}
-	dstProjectSet := make(map[string]struct{}, len(dstProjects))
-	for _, fn := range dstProjects {
-		dstProjectSet[fn] = struct{}{}
-	}
-	for _, filename := range projectFiles {
-		if _, exists := dstProjectSet[filename]; exists {
-			stats.SkippedProjects++
-			continue
-		}
-		stats.AddedProjects++
-		if dryRun {
-			continue
-		}
-		proj, err := src.ReadProject(filename)
-		if err != nil {
-			return stats, fmt.Errorf("reading source project %s: %w", filename, err)
-		}
-		if err := dst.WriteProject(proj); err != nil {
-			return stats, fmt.Errorf("writing destination project %s: %w", filename, err)
-		}
-	}
-	dstArchives, err := dst.ListArchives()
-	if err != nil {
-		return stats, fmt.Errorf("listing destination archives: %w", err)
-	}
-	dstArchiveSet := make(map[string]struct{}, len(dstArchives))
-	for _, fn := range dstArchives {
-		dstArchiveSet[fn] = struct{}{}
-	}
-	for _, filename := range archiveFiles {
-		srcArchive, err := src.ReadArchive(filename)
-		if err != nil {
-			return stats, fmt.Errorf("reading source archive %s: %w", filename, err)
-		}
-		if _, exists := dstArchiveSet[filename]; !exists {
-			stats.AddedArchiveTasks += len(srcArchive.Tasks)
-			if !dryRun {
-				if err := dst.WriteArchive(filename, srcArchive); err != nil {
-					return stats, fmt.Errorf("writing destination archive %s: %w", filename, err)
-				}
-			}
-			continue
-		}
-		dstArchive, err := dst.ReadArchive(filename)
-		if err != nil {
-			return stats, fmt.Errorf("reading destination archive %s: %w", filename, err)
-		}
-		merged, added, skipped := mergeTasksByID(dstArchive.Tasks, srcArchive.Tasks)
-		stats.AddedArchiveTasks += added
-		stats.SkippedArchiveTasks += skipped
-		if !dryRun {
-			dstArchive.Tasks = merged
-			if err := dst.WriteArchive(filename, dstArchive); err != nil {
-				return stats, fmt.Errorf("writing merged archive %s: %w", filename, err)
-			}
-		}
-	}
-	return stats, nil
-}
-
-func mergeTasksByID(base []model.Task, incoming []model.Task) (merged []model.Task, added int, skipped int) {
-	merged = append([]model.Task{}, base...)
-	ids := make(map[string]struct{}, len(base))
-	for _, t := range base {
-		ids[t.ID] = struct{}{}
-	}
-	for _, t := range incoming {
-		if _, exists := ids[t.ID]; exists {
-			skipped++
-			continue
-		}
-		merged = append(merged, t)
-		ids[t.ID] = struct{}{}
-		added++
-	}
-	return merged, added, skipped
-}
-
-func copyAllData(src *store.Store, dst *store.Store) error {
-	for _, lt := range []model.ListType{model.ListIn, model.ListSingleActions} {
-		list, err := src.ReadList(lt)
-		if err != nil {
-			return fmt.Errorf("reading %s: %w", lt, err)
-		}
-		if err := dst.WriteList(list); err != nil {
-			return fmt.Errorf("writing %s: %w", lt, err)
-		}
-	}
-	projects, err := src.ListProjects()
-	if err != nil {
-		return fmt.Errorf("listing projects: %w", err)
-	}
-	for _, filename := range projects {
-		proj, err := src.ReadProject(filename)
-		if err != nil {
-			return fmt.Errorf("reading project %s: %w", filename, err)
-		}
-		if err := dst.WriteProject(proj); err != nil {
-			return fmt.Errorf("writing project %s: %w", filename, err)
-		}
-	}
-	archives, err := src.ListArchives()
-	if err != nil {
-		return fmt.Errorf("listing archives: %w", err)
-	}
-	archiveAgg := &model.TaskList{Title: "Archive", Type: model.ListArchive}
-	for _, filename := range archives {
-		archive, err := src.ReadArchive(filename)
-		if err != nil {
-			return fmt.Errorf("reading archive %s: %w", filename, err)
-		}
-		archiveAgg.Tasks = append(archiveAgg.Tasks, archive.Tasks...)
-	}
-	if len(archiveAgg.Tasks) > 0 {
-		if err := dst.WriteArchive("archive.md", archiveAgg); err != nil {
-			return fmt.Errorf("writing archive: %w", err)
-		}
-	}
-	return nil
 }
 
 func getDataDir() string {
