@@ -475,6 +475,14 @@ func TestProjectAndSubgroupCoreAPIs(t *testing.T) {
 		t.Fatalf("unexpected get project result: %+v", got)
 	}
 
+	createdProj, err := c.CreateProject("Inbox-created project", "Tasks")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if createdProj.Project.ID == "" || createdProj.Project.Title != "Inbox-created project" || createdProj.Filename == "" {
+		t.Fatalf("unexpected created project result: %+v", createdProj)
+	}
+
 	sg, err := c.CreateSubgroup(proj.ID, "Maybe")
 	if err != nil {
 		t.Fatalf("create subgroup: %v", err)

@@ -2443,12 +2443,11 @@ func (m Model) updateAddingProject(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.mode = modeNormal
 		return m, func() tea.Msg {
-			_, err := m.svc.CreateProject(title, "Tasks")
+			proj, err := m.core.CreateProject(title, "Tasks")
 			if err != nil {
 				return errMsg{err}
 			}
-			filename := store.Slugify(title) + ".md"
-			return projectCreatedMsg{title: title, filename: filename}
+			return projectCreatedMsg{title: proj.Project.Title, filename: proj.Filename}
 		}
 
 	case "esc":
@@ -2610,11 +2609,11 @@ func (m Model) updateAdding(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // addTask returns a Cmd that adds a task to the inbox.
 func (m Model) addTask(text string) tea.Cmd {
 	return func() tea.Msg {
-		task, err := m.svc.AddToInbox(text)
+		task, err := m.core.CaptureToInbox(text, core.CaptureOpts{})
 		if err != nil {
 			return errMsg{err}
 		}
-		return taskAddedMsg{task}
+		return taskAddedMsg{task: &task}
 	}
 }
 

@@ -37,6 +37,7 @@ type ProjectService interface {
 	GetProject(projectID string) (ProjectLocation, error)
 	UpdateProject(projectID string, patch ProjectPatch) (ProjectLocation, error)
 	QueryProjects(input QueryInput) ([]ProjectLocation, error)
+	CreateProject(title, initialSubgroupTitle string) (ProjectLocation, error)
 	CreateSubgroup(projectID, title string) (SubgroupLocation, error)
 	RenameSubgroup(projectID, subgroupID, title string) (SubgroupLocation, error)
 	DeleteSubgroup(projectID, subgroupID string) error
@@ -637,6 +638,19 @@ func (c *Core) RunQuery(input QueryInput) ([]service.ViewTask, error) {
 // GetProject resolves and returns a project by stable project ID.
 func (c *Core) GetProject(projectID string) (ProjectLocation, error) {
 	loc, err := c.ResolveProject(projectID)
+	if err != nil {
+		return ProjectLocation{}, err
+	}
+	return *loc, nil
+}
+
+// CreateProject creates a project and returns its stable-ID location.
+func (c *Core) CreateProject(title, initialSubgroupTitle string) (ProjectLocation, error) {
+	proj, err := c.svc.CreateProject(title, initialSubgroupTitle)
+	if err != nil {
+		return ProjectLocation{}, err
+	}
+	loc, err := c.ResolveProject(proj.ID)
 	if err != nil {
 		return ProjectLocation{}, err
 	}
