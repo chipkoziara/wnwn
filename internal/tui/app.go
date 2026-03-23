@@ -640,8 +640,9 @@ type processInboxLoadedMsg struct{ session *core.InboxSession }
 type processAdvancedMsg struct{}
 
 type weeklyReviewLoadedMsg struct {
-	data service.WeeklyReviewData
-	err  error
+	data             service.WeeklyReviewData
+	err              error
+	preservePosition bool
 }
 
 type clearPrefixMsg struct{}
@@ -874,8 +875,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.clearStatusAfter()
 		}
 		m.weeklyReviewData = msg.data
-		m.weeklyReviewStep = weeklyStepProjects
-		m.weeklyReviewCursors = [weeklyStepCount]int{}
+		if !msg.preservePosition {
+			m.weeklyReviewStep = weeklyStepProjects
+			m.weeklyReviewCursors = [weeklyStepCount]int{}
+		} else {
+			m.clampWeeklyCursor()
+		}
 		m.view = viewWeeklyReview
 		return m, nil
 
@@ -990,14 +995,18 @@ func (m Model) loadProjects() tea.Msg {
 }
 
 func (m Model) loadWeeklyReview() tea.Msg {
+	return m.loadWeeklyReviewWithPosition(false)
+}
+
+func (m Model) loadWeeklyReviewWithPosition(preservePosition bool) tea.Msg {
 	if err := m.store.Init(); err != nil {
-		return weeklyReviewLoadedMsg{err: err}
+		return weeklyReviewLoadedMsg{err: err, preservePosition: preservePosition}
 	}
 	data, err := m.core.WeeklyReview(time.Now())
 	if err != nil {
-		return weeklyReviewLoadedMsg{err: err}
+		return weeklyReviewLoadedMsg{err: err, preservePosition: preservePosition}
 	}
-	return weeklyReviewLoadedMsg{data: data}
+	return weeklyReviewLoadedMsg{data: data, preservePosition: preservePosition}
 }
 
 // loadProjectDetail loads a full project by filename, resetting the cursor.
@@ -3247,7 +3256,7 @@ func (m Model) updateTaskDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.runQuery(m.activeViewName, m.activeViewQuery, m.activeViewInclA)
 		}
 		if m.detailFromView == viewWeeklyReview {
-			return m, m.loadWeeklyReview
+			return m, func() tea.Msg { return m.loadWeeklyReviewWithPosition(true) }
 		}
 		return m, nil
 
@@ -3512,7 +3521,7 @@ func (m Model) saveDetailTask() tea.Cmd {
 			return viewResultsLoadedMsg{name: viewName, queryStr: viewQueryStr, includeArchived: includeArchived, results: filtered}
 		}
 		if fromView == viewWeeklyReview {
-			return m.loadWeeklyReview()
+			return m.loadWeeklyReviewWithPosition(true)
 		}
 		return taskUpdatedMsg{task.Text}
 	}
@@ -4450,7 +4459,7 @@ func (m Model) weeklyTaskStateChange(newState model.TaskState) tea.Cmd {
 		if _, err := m.core.UpdateTask(vt.Task.ID, core.TaskPatch{State: &newState}); err != nil {
 			return errMsg{err}
 		}
-		return m.loadWeeklyReview()
+		return m.loadWeeklyReviewWithPosition(true)
 	}
 }
 
@@ -4463,7 +4472,7 @@ func (m Model) weeklyTaskArchive() tea.Cmd {
 		if err := m.core.ArchiveTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
-		return m.loadWeeklyReview()
+		return m.loadWeeklyReviewWithPosition(true)
 	}
 }
 
@@ -4476,7 +4485,7 @@ func (m Model) weeklyTaskTrash() tea.Cmd {
 		if err := m.core.TrashTask(vt.Task.ID); err != nil {
 			return errMsg{err}
 		}
-		return m.loadWeeklyReview()
+		return m.loadWeeklyReviewWithPosition(true)
 	}
 }
 
@@ -4551,7 +4560,7 @@ func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.view = viewTaskDetail
 		return m, nil
 	case "R":
-		return m, m.loadWeeklyReview
+		return m, func() tea.Msg { return m.loadWeeklyReviewWithPosition(true) }
 	case "1":
 		m.view = viewList
 		m.currentList = model.ListIn
