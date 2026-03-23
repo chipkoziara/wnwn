@@ -173,10 +173,11 @@ type Model struct {
 	err         error
 
 	// Project-related state.
-	projects       []service.ProjectSummary
-	activeProject  *model.Project // the project being viewed in detail
-	activeFilename string         // filename of the active project
-	projCursor     int            // cursor within project detail (flat index across sub-groups)
+	projects        []service.ProjectSummary
+	activeProject   *model.Project // the project being viewed in detail
+	activeProjectID string         // stable ID of the active project
+	activeFilename  string         // filename of the active project (derived metadata)
+	projCursor      int            // cursor within project detail (flat index across sub-groups)
 
 	// Refile state: task being refiled to a project.
 	refileTaskID    string
@@ -604,6 +605,7 @@ type clearStatusMsg struct{}
 type projectsLoadedMsg struct{ projects []service.ProjectSummary }
 type projectDetailMsg struct {
 	project     *model.Project
+	projectID   string
 	filename    string
 	resetCursor bool // true when entering detail view for the first time
 }
@@ -800,6 +802,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case projectDetailMsg:
 		m.activeProject = msg.project
+		m.activeProjectID = msg.projectID
 		m.activeFilename = msg.filename
 		m.view = viewProjectDetail
 		if msg.resetCursor {
@@ -1016,28 +1019,30 @@ func (m Model) loadWeeklyReviewWithPosition(preservePosition bool) tea.Msg {
 	return weeklyReviewLoadedMsg{data: data, preservePosition: preservePosition}
 }
 
-// loadProjectDetail loads a full project by filename, resetting the cursor.
+// loadProjectDetail loads a full project by stable ID, resetting the cursor.
 // Used when entering the detail view for the first time.
-func (m Model) loadProjectDetail(filename string) tea.Cmd {
+func (m Model) loadProjectDetail(projectID string) tea.Cmd {
 	return func() tea.Msg {
-		proj, err := m.store.ReadProject(filename)
+		loc, err := m.core.GetProject(projectID)
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectDetailMsg{proj, filename, true}
+		proj := loc.Project
+		return projectDetailMsg{project: &proj, projectID: loc.ProjectID, filename: loc.Filename, resetCursor: true}
 	}
 }
 
 // reloadProjectDetail reloads the project without resetting the cursor.
 // Used after mutations (reorder, add task, mark done, etc.).
 func (m Model) reloadProjectDetail() tea.Cmd {
-	filename := m.activeFilename
+	projectID := m.activeProjectID
 	return func() tea.Msg {
-		proj, err := m.store.ReadProject(filename)
+		loc, err := m.core.GetProject(projectID)
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectDetailMsg{proj, filename, false}
+		proj := loc.Project
+		return projectDetailMsg{project: &proj, projectID: loc.ProjectID, filename: loc.Filename, resetCursor: false}
 	}
 }
 
@@ -1859,8 +1864,7 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if len(m.projects) > 0 {
-			fn := m.projects[m.cursor].Filename
-			return m, m.loadProjectDetail(fn)
+			return m, m.loadProjectDetail(m.projects[m.cursor].ID)
 		}
 
 	case "a":
@@ -1873,7 +1877,7 @@ func (m Model) updateProjectList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "E":
 		// Open edit view for the selected project.
 		if len(m.projects) > 0 {
-			return m, m.openProjectEdit(m.projects[m.cursor].Filename, viewProjects)
+			return m, m.openProjectEdit(m.projects[m.cursor].ID, viewProjects)
 		}
 
 	case "1":
@@ -2276,8 +2280,8 @@ func (m Model) updateProjectDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "E":
 		// Open edit view for the active project.
-		if m.activeFilename != "" {
-			return m, m.openProjectEdit(m.activeFilename, viewProjectDetail)
+		if m.activeProjectID != "" {
+			return m, m.openProjectEdit(m.activeProjectID, viewProjectDetail)
 		}
 
 	case "1":
@@ -4067,14 +4071,14 @@ func (m Model) helpText() string {
 
 // ── Project Edit View ────────────────────────────────────────────────────────
 
-// openProjectEdit loads a project from disk into the working copy and switches to viewProjectEdit.
-func (m Model) openProjectEdit(filename string, fromView viewState) tea.Cmd {
+// openProjectEdit loads a project via core into the working copy and switches to viewProjectEdit.
+func (m Model) openProjectEdit(projectID string, fromView viewState) tea.Cmd {
 	return func() tea.Msg {
-		proj, err := m.store.ReadProject(filename)
+		loc, err := m.core.GetProject(projectID)
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectEditLoadedMsg{project: *proj, filename: filename, fromView: fromView}
+		return projectEditLoadedMsg{project: loc.Project, filename: loc.Filename, fromView: fromView}
 	}
 }
 
@@ -4566,7 +4570,7 @@ func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			p := m.weeklyReviewData.ProjectsWithoutNextAction[c]
-			return m, m.loadProjectDetail(p.Filename)
+			return m, m.loadProjectDetail(p.ID)
 		}
 		vt, ok := m.selectedWeeklyTask()
 		if !ok {
