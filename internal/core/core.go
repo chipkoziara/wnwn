@@ -956,7 +956,7 @@ func (c *Core) UpdateTask(taskID string, patch TaskPatch) (TaskLocation, error) 
 	applyTaskPatch(&updated, patch)
 
 	if loc.Kind == TaskLocationProject {
-		if err := c.svc.UpdateProjectTask(loc.Filename, loc.SubgroupIx, updated); err != nil {
+		if err := c.svc.UpdateProjectTaskByID(loc.Filename, loc.SubgroupID, updated); err != nil {
 			return TaskLocation{}, err
 		}
 	} else {
@@ -1301,7 +1301,7 @@ func (c *Core) ArchiveTask(taskID string) error {
 		return fmt.Errorf("task %s is already archived", taskID)
 	}
 	if loc.Kind == TaskLocationProject {
-		return c.svc.ArchiveProjectTask(loc.Filename, loc.SubgroupIx, taskID)
+		return c.svc.ArchiveProjectTaskByID(loc.Filename, loc.SubgroupID, taskID)
 	}
 	return c.svc.ArchiveTask(loc.ListType, taskID)
 }
@@ -1335,7 +1335,7 @@ func (c *Core) TrashTask(taskID string) error {
 		return fmt.Errorf("task %s is archived and cannot be trashed via active-task path", taskID)
 	}
 	if loc.Kind == TaskLocationProject {
-		return c.svc.TrashProjectTask(loc.Filename, loc.SubgroupIx, taskID)
+		return c.svc.TrashProjectTaskByID(loc.Filename, loc.SubgroupID, taskID)
 	}
 	return c.svc.TrashTask(loc.ListType, taskID)
 }

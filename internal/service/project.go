@@ -387,6 +387,46 @@ func (svc *Service) UpdateProjectTask(filename string, subGroupIdx int, updated 
 	return svc.Store.WriteProject(proj)
 }
 
+// UpdateProjectTaskByID replaces all mutable fields of a task within a project sub-group using a stable subgroup ID.
+func (svc *Service) UpdateProjectTaskByID(filename, subgroupID string, updated model.Task) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	sg := &proj.SubGroups[idx]
+	taskIdx := findTaskIndex(sg.Tasks, updated.ID)
+	if taskIdx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", updated.ID, sg.Title)
+	}
+
+	updated.Created = sg.Tasks[taskIdx].Created
+	updated.Source = sg.Tasks[taskIdx].Source
+	touchTask(&updated, time.Now())
+
+	if updated.State == model.StateWaitingFor && updated.WaitingSince == nil {
+		now := time.Now().Truncate(24 * time.Hour)
+		updated.WaitingSince = &now
+	}
+
+	sg.Tasks[taskIdx] = updated
+
+	if svc.shouldAutoArchive(updated.State) {
+		sg.Tasks[taskIdx].Source = fmt.Sprintf("projects/%s", filename)
+		if err := svc.archiveTask(sg.Tasks[taskIdx]); err != nil {
+			return fmt.Errorf("archiving task: %w", err)
+		}
+		sg.Tasks = append(sg.Tasks[:taskIdx], sg.Tasks[taskIdx+1:]...)
+	}
+
+	return svc.Store.WriteProject(proj)
+}
+
 // ArchiveProjectTask moves a task from a project sub-group into archive storage.
 func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID string) error {
 	proj, err := svc.Store.ReadProject(filename)
@@ -415,6 +455,35 @@ func (svc *Service) ArchiveProjectTask(filename string, subGroupIdx int, taskID 
 	return svc.Store.WriteProject(proj)
 }
 
+// ArchiveProjectTaskByID moves a task from a project sub-group into archive storage using a stable subgroup ID.
+func (svc *Service) ArchiveProjectTaskByID(filename, subgroupID, taskID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	sg := &proj.SubGroups[idx]
+	taskIdx := findTaskIndex(sg.Tasks, taskID)
+	if taskIdx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	task := sg.Tasks[taskIdx]
+	task.Source = fmt.Sprintf("projects/%s", filename)
+	touchTask(&task, time.Now())
+	if err := svc.archiveTask(task); err != nil {
+		return fmt.Errorf("archiving task: %w", err)
+	}
+
+	sg.Tasks = append(sg.Tasks[:taskIdx], sg.Tasks[taskIdx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
 // TrashProjectTask permanently removes a task from a project sub-group.
 func (svc *Service) TrashProjectTask(filename string, subGroupIdx int, taskID string) error {
 	proj, err := svc.Store.ReadProject(filename)
@@ -433,6 +502,28 @@ func (svc *Service) TrashProjectTask(filename string, subGroupIdx int, taskID st
 	}
 
 	sg.Tasks = append(sg.Tasks[:idx], sg.Tasks[idx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
+// TrashProjectTaskByID permanently removes a task from a project sub-group using a stable subgroup ID.
+func (svc *Service) TrashProjectTaskByID(filename, subgroupID, taskID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	sg := &proj.SubGroups[idx]
+	taskIdx := findTaskIndex(sg.Tasks, taskID)
+	if taskIdx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	sg.Tasks = append(sg.Tasks[:taskIdx], sg.Tasks[taskIdx+1:]...)
 	return svc.Store.WriteProject(proj)
 }
 
