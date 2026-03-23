@@ -879,9 +879,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.weeklyReviewStep = weeklyStepProjects
 			m.weeklyReviewCursors = [weeklyStepCount]int{}
 		} else {
+			advanced := m.advanceWeeklyReviewIfCurrentSectionEmpty()
+			if advanced {
+				m.statusMsg = fmt.Sprintf("Moved to next section: %s", weeklyStepTitle(m.weeklyReviewStep))
+			}
 			m.clampWeeklyCursor()
 		}
 		m.view = viewWeeklyReview
+		if msg.preservePosition && m.statusMsg != "" {
+			return m, m.clearStatusAfter()
+		}
 		return m, nil
 
 	case clearStatusMsg:
@@ -4418,14 +4425,16 @@ func (m Model) weeklyTasksForStep(step weeklyReviewStep) []service.ViewTask {
 	}
 }
 
+func (m Model) weeklyStepCount(step weeklyReviewStep) int {
+	if step == weeklyStepProjects {
+		return len(m.weeklyReviewData.ProjectsWithoutNextAction)
+	}
+	return len(m.weeklyTasksForStep(step))
+}
+
 func (m *Model) clampWeeklyCursor() {
 	step := m.weeklyReviewStep
-	max := 0
-	if step == weeklyStepProjects {
-		max = len(m.weeklyReviewData.ProjectsWithoutNextAction)
-	} else {
-		max = len(m.weeklyTasksForStep(step))
-	}
+	max := m.weeklyStepCount(step)
 	if max == 0 {
 		m.weeklyReviewCursors[step] = 0
 		return
@@ -4436,6 +4445,22 @@ func (m *Model) clampWeeklyCursor() {
 	if m.weeklyReviewCursors[step] < 0 {
 		m.weeklyReviewCursors[step] = 0
 	}
+}
+
+func (m *Model) advanceWeeklyReviewIfCurrentSectionEmpty() bool {
+	if m.weeklyStepCount(m.weeklyReviewStep) > 0 {
+		return false
+	}
+	for i := 1; i < int(weeklyStepCount); i++ {
+		next := weeklyReviewStep((int(m.weeklyReviewStep) + i) % int(weeklyStepCount))
+		if m.weeklyStepCount(next) > 0 {
+			m.weeklyReviewStep = next
+			m.clampWeeklyCursor()
+			return true
+		}
+	}
+	m.clampWeeklyCursor()
+	return false
 }
 
 func (m Model) selectedWeeklyTask() (service.ViewTask, bool) {
