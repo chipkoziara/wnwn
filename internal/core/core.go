@@ -1241,7 +1241,7 @@ func (c *Core) MoveTaskToList(taskID string, toList model.ListType, newState mod
 		return TaskLocation{}, fmt.Errorf("task %s is archived and cannot be moved", taskID)
 	}
 	if loc.Kind == TaskLocationProject {
-		if err := c.svc.MoveTaskFromProjectToList(loc.Filename, loc.SubgroupIx, taskID, toList, newState); err != nil {
+		if err := c.svc.MoveTaskFromProjectToListByID(loc.Filename, loc.SubgroupID, taskID, toList, newState); err != nil {
 			return TaskLocation{}, err
 		}
 	} else {
@@ -1280,7 +1280,7 @@ func (c *Core) MoveTaskToProject(taskID string, projectID, subgroupID string, ne
 		}
 		return TaskLocation{}, fmt.Errorf("moving project tasks between projects is not implemented yet")
 	} else {
-		if err := c.svc.MoveToProject(loc.ListType, taskID, target.Filename, target.SubgroupIx, newState); err != nil {
+		if err := c.svc.MoveToProjectByID(loc.ListType, taskID, target.Filename, target.Subgroup.ID, newState); err != nil {
 			return TaskLocation{}, err
 		}
 	}

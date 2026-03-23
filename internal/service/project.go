@@ -308,6 +308,45 @@ func (svc *Service) MoveToProject(fromList model.ListType, taskID string, projec
 	return nil
 }
 
+// MoveToProjectByID moves a task from a list into a project sub-group using a stable subgroup ID.
+func (svc *Service) MoveToProjectByID(fromList model.ListType, taskID string, projectFile, subgroupID string, newState model.TaskState) error {
+	// Read and remove from source list.
+	src, err := svc.Store.ReadList(fromList)
+	if err != nil {
+		return fmt.Errorf("reading source list: %w", err)
+	}
+
+	idx := findTaskIndex(src.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in %s", taskID, fromList)
+	}
+
+	task := src.Tasks[idx]
+	task.State = newState
+	touchTask(&task, time.Now())
+	src.Tasks = append(src.Tasks[:idx], src.Tasks[idx+1:]...)
+
+	proj, err := svc.Store.ReadProject(projectFile)
+	if err != nil {
+		return fmt.Errorf("reading project: %w", err)
+	}
+
+	sgIdx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if sgIdx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	proj.SubGroups[sgIdx].Tasks = append(proj.SubGroups[sgIdx].Tasks, task)
+
+	if err := svc.Store.WriteList(src); err != nil {
+		return fmt.Errorf("writing source list: %w", err)
+	}
+	if err := svc.Store.WriteProject(proj); err != nil {
+		return fmt.Errorf("writing project: %w", err)
+	}
+	return nil
+}
+
 // UpdateProjectTaskState changes a task's state within a project.
 func (svc *Service) UpdateProjectTaskState(filename string, subGroupIdx int, taskID string, newState model.TaskState) error {
 	proj, err := svc.Store.ReadProject(filename)
