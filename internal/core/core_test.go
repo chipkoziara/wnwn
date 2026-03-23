@@ -355,9 +355,8 @@ func TestUpdateProjectPatchAndClear(t *testing.T) {
 	if updated.Project.Deadline != nil || updated.Project.URL != "" || updated.Project.DefinitionOfDone != "" {
 		t.Fatalf("expected cleared project fields, got %+v", updated.Project)
 	}
-	// Note: the legacy service.UpdateProject path does not yet persist WaitingOn.
-	if updated.Project.WaitingOn != "Sarah" {
-		t.Fatalf("expected legacy waiting_on behavior to remain unchanged for now, got %+v", updated.Project)
+	if updated.Project.WaitingOn != "" {
+		t.Fatalf("expected waiting_on to be cleared, got %+v", updated.Project)
 	}
 	if updated.Filename == "" {
 		t.Fatalf("expected resolved project filename after update")

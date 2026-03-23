@@ -94,7 +94,7 @@ func (svc *Service) CreateProject(title string, subGroupTitle string) (*model.Pr
 }
 
 // UpdateProject replaces the mutable metadata fields of a project (title, state, tags,
-// deadline, URL, DefinitionOfDone). Sub-groups and tasks are preserved from disk.
+// deadline, URL, WaitingOn, DefinitionOfDone). Sub-groups and tasks are preserved from disk.
 // If the title changed, the project file is renamed on disk.
 // Returns the (possibly new) filename.
 func (svc *Service) UpdateProject(oldFilename string, updated model.Project) (string, error) {
@@ -110,6 +110,7 @@ func (svc *Service) UpdateProject(oldFilename string, updated model.Project) (st
 	proj.Tags = updated.Tags
 	proj.Deadline = updated.Deadline
 	proj.URL = updated.URL
+	proj.WaitingOn = updated.WaitingOn
 	proj.DefinitionOfDone = updated.DefinitionOfDone
 
 	newFilename, err := svc.Store.RenameProject(oldFilename, proj)
