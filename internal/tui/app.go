@@ -630,6 +630,7 @@ type viewResultsLoadedMsg struct {
 
 type projectUpdatedMsg struct {
 	title       string
+	projectID   string
 	newFilename string
 }
 type errMsg struct{ err error }
@@ -847,11 +848,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case projectUpdatedMsg:
 		m.statusMsg = fmt.Sprintf("Saved: %s", msg.title)
+		m.activeProjectID = msg.projectID
 		m.activeFilename = msg.newFilename
 		if m.projEditFromView == viewProjectDetail {
-			// Stay in project detail but reload with new filename.
+			// Stay in project detail but reload by stable project ID.
 			m.view = viewProjectDetail
-			return m, tea.Batch(m.loadProjectDetail(msg.newFilename), m.clearStatusAfter())
+			return m, tea.Batch(m.loadProjectDetail(msg.projectID), m.clearStatusAfter())
 		}
 		// Return to project list.
 		m.view = viewProjects
@@ -4285,7 +4287,7 @@ func (m Model) saveProjectEdit() tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return projectUpdatedMsg{title: updated.Project.Title, newFilename: updated.Filename}
+		return projectUpdatedMsg{title: updated.Project.Title, projectID: updated.ProjectID, newFilename: updated.Filename}
 	}
 }
 
