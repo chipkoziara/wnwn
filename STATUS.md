@@ -26,8 +26,8 @@ A Getting Things Done (GTD) inspired TUI app built in Go with Bubbletea v2, Lipg
   - `CoreConfig` now carries behavior flags plus config-defined saved views into the core layer.
   - Stable-ID resolver helpers bridge the new contract onto legacy internals:
     - `ResolveTask(taskID)` → inbox/actions/project/archive location metadata
-    - `ResolveProject(projectID)` → current project filename + loaded project
-    - `ResolveSubgroup(projectID, subgroupID)` → current subgroup index within a project
+    - `ResolveProject(projectID)` → current persisted project + transitional filename metadata
+    - `ResolveSubgroup(projectID, subgroupID)` → current subgroup + transitional bridge metadata (including index while legacy internals remain)
   - Core read APIs now wrap the existing implementation for:
     - saved views (`ListViews`, `RunView`)
     - ad-hoc task query (`RunQuery`)
@@ -289,6 +289,7 @@ Prioritized by impact:
 - **Project-task reorder now uses subgroup IDs below core too** — The next subgroup-contract slice removed another index-heavy path: `core.ReorderProjectTask(...)` now delegates through a subgroup-ID-based service helper rather than passing subgroup indexes down the stack. Reorder semantics are unchanged, but subgroup identity now remains stable-ID-based farther into the implementation even for within-subgroup task movement.
 - **More project-task mutation paths now use subgroup IDs below core** — `core.UpdateTask(...)`, `core.ArchiveTask(...)`, and `core.TrashTask(...)` now delegate project-task cases through subgroup-ID-based service helpers rather than subgroup indexes. The remaining index-heavy seams are narrowing toward cross-location move/restore semantics rather than routine within-project mutations.
 - **Cross-location task moves now use subgroup IDs below core too** — The next subgroup-contract slice added subgroup-ID-based helpers for project→list and list→project moves, and `core.MoveTaskToList(...)` / `core.MoveTaskToProject(...)` now use subgroup IDs rather than subgroup indexes for those normal move paths. At this point, subgroup indexes are increasingly confined to transitional resolver metadata and legacy source/restore seams rather than day-to-day mutation operations.
+- **Core location structs now explicitly document transitional bridge fields** — `ProjectLocation.Filename` and `SubgroupLocation.SubgroupIx` are now documented as compatibility metadata for the remaining legacy bridge rather than the intended long-term contract. This makes the architecture intent clearer for future cleanup: stable IDs are the real boundary, while filename/index fields persist only where the extraction still has to adapt onto older internals.
 - **First public release published** — `wnwn v0.1.0` has been released publicly as a source-build release. The public release includes the refreshed README/release notes, demo walkthrough support, aligned module path, release hardening checks, and the late Process Inbox help-overlay cleanup done during final release prep.
 - **Process Inbox actionable/enrich steps no longer duplicate key hints** — The actionable and enrich steps already render their choices inline, so the footer help now stays blank for those steps instead of repeating the same bindings a second time. This keeps Process Inbox visually cleaner and fixes the duplicate-keybinding overlays found during release prep.
 - **Public demo script added** — Added `demo-script.txt` as a lightweight walkthrough for demos and onboarding. It uses the reproducible fixture packs already documented in `README.md` and keeps the guidance action-oriented instead of assuming default keybindings are unchanged.

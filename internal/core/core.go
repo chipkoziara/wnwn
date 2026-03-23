@@ -436,15 +436,20 @@ type TaskLocation struct {
 	Archived   bool
 }
 
-// ProjectLocation resolves a project ID to the legacy filename-based store.
+// ProjectLocation resolves a project ID to the current persisted project plus
+// transitional filename metadata needed by the legacy storage bridge.
 type ProjectLocation struct {
 	Project   model.Project
 	ProjectID string
 	Filename  string
 }
 
-// SubgroupLocation resolves a subgroup ID to its containing project and the
-// subgroup's current index.
+// SubgroupLocation resolves a subgroup ID to its containing project.
+//
+// SubgroupIx is retained only as transitional bridge metadata while parts of the
+// legacy filename/index-based implementation still exist below the core boundary.
+// New core call paths should prefer ProjectID/Subgroup.ID semantics over relying
+// on SubgroupIx as an operational contract.
 type SubgroupLocation struct {
 	ProjectID   string
 	Filename    string
