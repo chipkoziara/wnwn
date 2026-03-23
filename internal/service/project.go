@@ -467,6 +467,37 @@ func (svc *Service) ReorderTaskInSubGroup(filename string, subGroupIdx int, task
 	return svc.Store.WriteProject(proj)
 }
 
+// ReorderTaskInSubGroupByID moves a task up or down within its sub-group using a stable subgroup ID.
+// delta is -1 for up, +1 for down.
+func (svc *Service) ReorderTaskInSubGroupByID(filename string, subgroupID, taskID string, delta int) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	sg := &proj.SubGroups[idx]
+	taskIdx := findTaskIndex(sg.Tasks, taskID)
+	if taskIdx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, sg.Title)
+	}
+
+	newIdx := taskIdx + delta
+	if newIdx < 0 || newIdx >= len(sg.Tasks) {
+		return nil
+	}
+
+	sg.Tasks[taskIdx], sg.Tasks[newIdx] = sg.Tasks[newIdx], sg.Tasks[taskIdx]
+	touchTask(&sg.Tasks[taskIdx], time.Now())
+	touchTask(&sg.Tasks[newIdx], time.Now())
+
+	return svc.Store.WriteProject(proj)
+}
+
 // MoveTaskBetweenSubGroups moves a task from one sub-group to another within the same project.
 func (svc *Service) MoveTaskBetweenSubGroups(filename string, fromSgIdx int, taskID string, toSgIdx int) error {
 	proj, err := svc.Store.ReadProject(filename)

@@ -1213,7 +1213,7 @@ func (c *Core) ReorderProjectTask(taskID string, delta int) error {
 	if loc.Kind != TaskLocationProject {
 		return fmt.Errorf("task %s is not a project task", taskID)
 	}
-	return c.svc.ReorderTaskInSubGroup(loc.Filename, loc.SubgroupIx, taskID, delta)
+	return c.svc.ReorderTaskInSubGroupByID(loc.Filename, loc.SubgroupID, taskID, delta)
 }
 
 // RestoreTrashedTask restores a just-trashed raw task payload back to the given source.
