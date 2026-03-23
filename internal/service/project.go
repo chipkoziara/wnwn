@@ -139,6 +139,15 @@ func (svc *Service) AddSubGroup(filename string, title string) (*model.SubGroup,
 	return &sg, nil
 }
 
+func findSubGroupIndex(subGroups []model.SubGroup, subgroupID string) int {
+	for i, sg := range subGroups {
+		if sg.ID == subgroupID {
+			return i
+		}
+	}
+	return -1
+}
+
 // RenameSubGroup updates the title of an existing project sub-group.
 func (svc *Service) RenameSubGroup(filename string, subGroupIdx int, title string) error {
 	proj, err := svc.Store.ReadProject(filename)
@@ -155,6 +164,23 @@ func (svc *Service) RenameSubGroup(filename string, subGroupIdx int, title strin
 	return svc.Store.WriteProject(proj)
 }
 
+// RenameSubGroupByID updates the title of an existing project sub-group by stable subgroup ID.
+func (svc *Service) RenameSubGroupByID(filename string, subgroupID, title string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+	if title == "" {
+		return fmt.Errorf("sub-group title cannot be empty")
+	}
+	proj.SubGroups[idx].Title = title
+	return svc.Store.WriteProject(proj)
+}
+
 // DeleteSubGroup removes a sub-group when it has no tasks.
 func (svc *Service) DeleteSubGroup(filename string, subGroupIdx int) error {
 	proj, err := svc.Store.ReadProject(filename)
@@ -168,6 +194,23 @@ func (svc *Service) DeleteSubGroup(filename string, subGroupIdx int) error {
 		return fmt.Errorf("sub-group %q has tasks; move tasks before deleting", proj.SubGroups[subGroupIdx].Title)
 	}
 	proj.SubGroups = append(proj.SubGroups[:subGroupIdx], proj.SubGroups[subGroupIdx+1:]...)
+	return svc.Store.WriteProject(proj)
+}
+
+// DeleteSubGroupByID removes a sub-group by stable subgroup ID when it has no tasks.
+func (svc *Service) DeleteSubGroupByID(filename string, subgroupID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+	if len(proj.SubGroups[idx].Tasks) > 0 {
+		return fmt.Errorf("sub-group %q has tasks; move tasks before deleting", proj.SubGroups[idx].Title)
+	}
+	proj.SubGroups = append(proj.SubGroups[:idx], proj.SubGroups[idx+1:]...)
 	return svc.Store.WriteProject(proj)
 }
 
@@ -191,6 +234,33 @@ func (svc *Service) AddTaskToProject(filename string, subGroupIdx int, text stri
 	task.ModifiedAt = timePtr(task.Created)
 
 	proj.SubGroups[subGroupIdx].Tasks = append(proj.SubGroups[subGroupIdx].Tasks, task)
+
+	if err := svc.Store.WriteProject(proj); err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+// AddTaskToProjectByID adds a task to a specific sub-group within a project by stable subgroup ID.
+func (svc *Service) AddTaskToProjectByID(filename string, subgroupID, text string, state model.TaskState) (*model.Task, error) {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return nil, err
+	}
+	idx := findSubGroupIndex(proj.SubGroups, subgroupID)
+	if idx == -1 {
+		return nil, fmt.Errorf("sub-group %s not found", subgroupID)
+	}
+
+	task := model.Task{
+		ID:      id.New(),
+		Created: time.Now().Truncate(time.Minute),
+		Text:    text,
+		State:   state,
+	}
+	task.ModifiedAt = timePtr(task.Created)
+
+	proj.SubGroups[idx].Tasks = append(proj.SubGroups[idx].Tasks, task)
 
 	if err := svc.Store.WriteProject(proj); err != nil {
 		return nil, err
@@ -427,5 +497,38 @@ func (svc *Service) MoveTaskBetweenSubGroups(filename string, fromSgIdx int, tas
 	toSg := &proj.SubGroups[toSgIdx]
 	toSg.Tasks = append(toSg.Tasks, task)
 
+	return svc.Store.WriteProject(proj)
+}
+
+// MoveTaskBetweenSubGroupsByID moves a task between sub-groups using stable subgroup IDs.
+func (svc *Service) MoveTaskBetweenSubGroupsByID(filename string, fromSubgroupID, taskID, toSubgroupID string) error {
+	proj, err := svc.Store.ReadProject(filename)
+	if err != nil {
+		return err
+	}
+
+	fromIdx := findSubGroupIndex(proj.SubGroups, fromSubgroupID)
+	if fromIdx == -1 {
+		return fmt.Errorf("source sub-group %s not found", fromSubgroupID)
+	}
+	toIdx := findSubGroupIndex(proj.SubGroups, toSubgroupID)
+	if toIdx == -1 {
+		return fmt.Errorf("destination sub-group %s not found", toSubgroupID)
+	}
+	if fromIdx == toIdx {
+		return nil
+	}
+
+	fromSg := &proj.SubGroups[fromIdx]
+	idx := findTaskIndex(fromSg.Tasks, taskID)
+	if idx == -1 {
+		return fmt.Errorf("task %s not found in sub-group %q", taskID, fromSg.Title)
+	}
+
+	task := fromSg.Tasks[idx]
+	touchTask(&task, time.Now())
+	fromSg.Tasks = append(fromSg.Tasks[:idx], fromSg.Tasks[idx+1:]...)
+
+	proj.SubGroups[toIdx].Tasks = append(proj.SubGroups[toIdx].Tasks, task)
 	return svc.Store.WriteProject(proj)
 }

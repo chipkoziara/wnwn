@@ -1116,7 +1116,7 @@ func (c *Core) RenameSubgroup(projectID, subgroupID, title string) (SubgroupLoca
 	if err != nil {
 		return SubgroupLocation{}, err
 	}
-	if err := c.svc.RenameSubGroup(loc.Filename, loc.SubgroupIx, title); err != nil {
+	if err := c.svc.RenameSubGroupByID(loc.Filename, subgroupID, title); err != nil {
 		return SubgroupLocation{}, err
 	}
 	updated, err := c.ResolveSubgroup(projectID, subgroupID)
@@ -1132,7 +1132,7 @@ func (c *Core) DeleteSubgroup(projectID, subgroupID string) error {
 	if err != nil {
 		return err
 	}
-	return c.svc.DeleteSubGroup(loc.Filename, loc.SubgroupIx)
+	return c.svc.DeleteSubGroupByID(loc.Filename, subgroupID)
 }
 
 // AddProjectTask adds a task to a subgroup using stable project/subgroup IDs.
@@ -1145,7 +1145,7 @@ func (c *Core) AddProjectTask(projectID, subgroupID, text string, opts CaptureOp
 	if opts.WaitingOn != "" {
 		state = model.StateWaitingFor
 	}
-	task, err := c.svc.AddTaskToProject(loc.Filename, loc.SubgroupIx, text, state)
+	task, err := c.svc.AddTaskToProjectByID(loc.Filename, subgroupID, text, state)
 	if err != nil {
 		return TaskLocation{}, err
 	}
@@ -1201,7 +1201,7 @@ func (c *Core) MoveTaskToSubgroup(taskID, subgroupID string) error {
 	if err != nil {
 		return err
 	}
-	return c.svc.MoveTaskBetweenSubGroups(taskLoc.Filename, taskLoc.SubgroupIx, taskID, target.SubgroupIx)
+	return c.svc.MoveTaskBetweenSubGroupsByID(taskLoc.Filename, taskLoc.SubgroupID, taskID, target.Subgroup.ID)
 }
 
 // ReorderProjectTask reorders a project task within its current subgroup using a stable task ID.
