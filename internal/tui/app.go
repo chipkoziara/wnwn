@@ -773,7 +773,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload = m.loadCurrentList
 		} else if m.view == viewProjects {
 			reload = m.loadProjects
-		} else if m.view == viewProjectDetail && m.activeFilename != "" {
+		} else if m.view == viewProjectDetail && m.activeProjectID != "" {
 			reload = m.reloadProjectDetail()
 		}
 		undoTick := m.setUndo(msg.undoPrompt, msg.undoApply, reload, msg.undoSuccess)
@@ -787,7 +787,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.detailFromView == viewList {
 			m.currentList = m.detailFromList
 			reload = m.loadCurrentList
-		} else if m.detailFromView == viewProjectDetail && m.activeFilename != "" {
+		} else if m.detailFromView == viewProjectDetail && m.activeProjectID != "" {
 			reload = m.reloadProjectDetail()
 		} else if m.detailFromView == viewViewResults {
 			// saveDetailTask returns viewResultsLoadedMsg for this case,
@@ -3497,7 +3497,6 @@ func parseDateTime(s string) (*time.Time, bool) {
 func (m Model) saveDetailTask() tea.Cmd {
 	task := m.detailTask
 	_ = m.detailIsProject
-	_ = m.activeFilename
 	_ = m.detailFromSgIdx
 	fromView := m.detailFromView
 	viewName := m.activeViewName
