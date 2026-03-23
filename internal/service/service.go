@@ -325,6 +325,7 @@ type ViewTask struct {
 	Source    string // "in", "single-actions", or "projects/<filename>"
 	SgIdx     int    // sub-group index within a project; -1 for list tasks
 	Filename  string // project filename; empty for list tasks
+	ProjectID string // stable project ID for project tasks; empty for list/archive tasks
 	ListType  model.ListType
 	IsProject bool
 }
@@ -371,6 +372,7 @@ func (svc *Service) CollectAllTasks() ([]ViewTask, error) {
 					Source:    source,
 					SgIdx:     sgIdx,
 					Filename:  filename,
+					ProjectID: proj.ID,
 					IsProject: true,
 				})
 			}

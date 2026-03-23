@@ -4588,6 +4588,10 @@ func (m Model) updateWeeklyReview(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.detailFromList = vt.ListType
 		m.detailFromSgIdx = vt.SgIdx
 		m.detailIsProject = vt.IsProject
+		if vt.IsProject {
+			m.activeProjectID = vt.ProjectID
+			m.activeFilename = vt.Filename
+		}
 		m.view = viewTaskDetail
 		return m, nil
 	case "R":
@@ -4821,6 +4825,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.detailFromView = viewViewResults
 			m.detailIsProject = vt.IsProject
 			if vt.IsProject {
+				m.activeProjectID = vt.ProjectID
 				m.activeFilename = vt.Filename
 				m.detailFromSgIdx = vt.SgIdx
 			} else {
@@ -4888,6 +4893,7 @@ func (m Model) updateViewResults(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.detailFromView = viewViewResults
 		m.detailIsProject = vt.IsProject
 		if vt.IsProject {
+			m.activeProjectID = vt.ProjectID
 			m.activeFilename = vt.Filename
 			m.detailFromSgIdx = vt.SgIdx
 		} else {
