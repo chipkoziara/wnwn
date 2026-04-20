@@ -2,6 +2,7 @@
   "name": "wnwn",
   "version": "0.1.0",
   "description": "A GTD-inspired task manager - Electron GUI client",
+  "author": "wnwn contributors",
   "main": "dist/main/index.js",
   "scripts": {
     "dev": "concurrently \"pnpm run dev:renderer\" \"pnpm run dev:main\"",
@@ -11,10 +12,12 @@
     "build:renderer": "cd src/renderer && pnpm exec vite build",
     "build:main": "pnpm exec tsc -p tsconfig.main.json",
     "start": "pnpm run build:main && pnpm exec electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "build:go": "node scripts/build-go.js",
+    "predist": "pnpm run build && pnpm run build:go",
+    "dist": "pnpm exec electron-builder",
+    "dist:mac": "pnpm exec electron-builder --mac",
+    "dist:linux": "pnpm exec electron-builder --linux",
+    "dist:all": "node scripts/build-go.js && pnpm run build && pnpm exec electron-builder --mac --linux"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
@@ -30,29 +33,34 @@
     "directories": {
       "output": "release"
     },
-    "extraResources": [
-      {
-        "from": "resources/",
-        "to": ".",
-        "filter": ["wnwn-server*"]
-      }
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
     ],
     "mac": {
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] }
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "extraResources": [
+        {
+          "from": "resources/wnwn-server-darwin-${arch}",
+          "to": "wnwn-server"
+        }
+      ]
     },
     "linux": {
       "target": [
         { "target": "AppImage", "arch": ["x64"] }
       ],
-      "category": "Office"
-    },
-    "files": [
-      "dist/**/*",
-      "node_modules/**/*",
-      "package.json"
-    ]
+      "category": "Office",
+      "extraResources": [
+        {
+          "from": "resources/wnwn-server-linux-x64",
+          "to": "wnwn-server"
+        }
+      ]
+    }
   }
 }
