@@ -530,6 +530,10 @@ func (s *sqliteStore) openDB() (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening sqlite db: %w", err)
 	}
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enabling WAL mode: %w", err)
+	}
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enabling foreign keys: %w", err)
