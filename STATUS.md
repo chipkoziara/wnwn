@@ -3,6 +3,7 @@
 Last updated: 2026-03-22 (session 27)
 
 Architecture milestone recap: see `docs/architecture-milestone-summary-2026-03-22.md`.
+Separate-repo TUI readiness/planning note: see `docs/separate-repo-tui-readiness-checklist.md`.
 
 ## What This Is
 
